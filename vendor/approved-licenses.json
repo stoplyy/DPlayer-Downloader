@@ -1,0 +1,16 @@
+{
+  "ytDlp": {
+    "version": "2026.08.19",
+    "sha256": "BECE045AEEC8CBDB6F0D543D19AEEA1F5952BD8153F3D5B1175B0F6A78513760",
+    "sourceArchiveSha256": "",
+    "licenseFile": "licenses/yt-dlp.txt"
+  },
+  "ffmpeg": {
+    "version": "8.1.2-full_build-www.gyan.dev",
+    "sha256": "AD8F211BC894755E0061C55AB280AE00E8D3D4F15A8CC4372B24CFA247B5942E",
+    "ffprobeSha256": "9DF3B0B5275E830961DF6D94E1F7A71121A7ABD5FF708E9FEC8A0B6084A55015",
+    "sourceCommit": "38b88335f9",
+    "sourceArchiveSha256": "",
+    "licenseFile": "licenses/ffmpeg-GPL-3.0.txt"
+  }
+}

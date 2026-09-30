@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Frame Video Downloader",
+  "version": "0.1.0",
+  "description": "Find and download media from the active tab through a local downloader.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnvD0xjy0V5KrY6oHz6x/sTDp4BIwZYPsTUowrviV4d4HtfQt68lymRYek0VEKLWHgvV4y5MnrYFN7vVTHvV71MS/XkIgu6Vwop/fQvUCJVxbtslb2uoECErjLRlHvPKe1tgY/j1ATDsLf0hYLJJiTnX71Iy4Qga3hhEQ1ltoQUp0GF5nIhmXsn8wRpsubgyIVmjKkuldTvxT6NUf1Ih95F9hyWMc7+KfBEswevLvEVc6wBWOLsWw0jQrlSc/9xpjVmMseL8A8n60k4j+5FfwUF9hbrN7/x+cb97yD0PQuYbs9d49GVGAG2QSdv1R0Cd3HIk2X1aulacRi+vIxmystwIDAQAB",
+  "permissions": ["activeTab", "scripting", "nativeMessaging"],
+  "optional_permissions": ["cookies"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "action": {"default_title": "Frame 视频下载器", "default_popup": "popup.html"},
+  "background": {"service_worker": "service_worker.js", "type": "module"}
+}

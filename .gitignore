@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# PyInstaller / release build outputs
+.build/
+.build-*/
+dist/
+*.spec
+
+# Local task state and downloaded media (never commit)
+state/
+secrets/
+*.cookies
+
+# Vendor binaries are reviewed inputs, not source
+vendor/*.exe
+vendor/*.tar.gz
+vendor/*.tar.xz
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

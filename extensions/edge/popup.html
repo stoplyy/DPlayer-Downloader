@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Frame 下载器</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="masthead">
+    <div class="brand"><span class="brand-mark">F</span><span>FRAME <small>MEDIA TOOL</small></span></div>
+    <button id="refreshTasks" class="icon-button" title="刷新任务" aria-label="刷新任务">↻</button>
+  </header>
+  <section class="page-info">
+    <div class="eyebrow">当前标签页</div>
+    <div id="pageTitle" class="page-title">等待扫描</div>
+    <div id="bridgeStatus" class="bridge-status"><span class="status-dot"></span><span>正在连接本机下载器</span></div>
+  </section>
+  <main>
+    <div class="section-heading">
+      <h1>媒体资源</h1>
+      <button id="scanButton" class="text-button">扫描此页</button>
+    </div>
+    <div id="emptyState" class="empty-state">点击“扫描此页”查找视频资源</div>
+    <div id="candidateList" class="candidate-list" aria-live="polite"></div>
+    <div class="download-options">
+      <label class="consent-row"><input id="useCookies" type="checkbox"><span class="switch"></span><span>使用当前站点登录态</span></label>
+      <div class="option-note">仅对本次任务按需请求所选媒体域权限</div>
+    </div>
+    <div id="taskSection" class="task-section" hidden>
+      <div class="section-heading"><h2>下载队列</h2><button id="refreshTasks2" class="text-button">刷新</button></div>
+      <div id="taskList" class="task-list"></div>
+    </div>
+  </main>
+  <footer class="footer">
+    <span id="selectionCount">未选择资源</span>
+    <button id="downloadButton" class="primary-button" disabled><span aria-hidden="true">↓</span>下载已选</button>
+  </footer>
+  <div id="notice" class="notice" role="status" hidden></div>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

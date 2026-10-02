@@ -203,6 +203,7 @@ class TaskServiceCookieTests(unittest.TestCase):
             first.store.set_status("task-done", "downloading")
             first.store.set_status("task-done", "finalizing")
             first.store.set_status("task-done", "completed")
+            (output_root / "done.mp4").touch()
 
             second = TaskService(
                 send_update=lambda message: None,
@@ -235,6 +236,64 @@ class TaskServiceCookieTests(unittest.TestCase):
             self.assertEqual(health["ffmpegAvailable"], False)
             self.assertEqual(health["downloadDirectory"], str(output_root))
             self.assertEqual(health["downloadDirectoryWritable"], True)
+
+    def test_list_tasks_prunes_missing_outputs_but_keeps_active_tasks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory) / "output"
+            service = TaskService(
+                send_update=lambda message: None,
+                root=Path(directory) / "state",
+                output_root=output_root,
+                executable="yt-dlp.exe",
+                protector=TestProtector(),
+            )
+            service.store.create(
+                "missing-completed",
+                "https://media.example/missing-completed.mp4",
+                "missing-completed.mp4",
+                "mp4",
+                output_directory=output_root,
+            )
+            service.store.set_status("missing-completed", "downloading")
+            service.store.set_status("missing-completed", "finalizing")
+            service.store.set_status("missing-completed", "completed")
+            service.store.create(
+                "missing-paused",
+                "https://media.example/missing-paused.mp4",
+                "missing-paused.mp4",
+                "mp4",
+                output_directory=output_root,
+            )
+            service.store.set_status("missing-paused", "downloading")
+            service.store.set_status("missing-paused", "paused")
+            service.store.create(
+                "active-task",
+                "https://media.example/active.mp4",
+                "active.mp4",
+                "mp4",
+                output_directory=output_root,
+            )
+            service.store.set_status("active-task", "downloading")
+            service.store.create(
+                "present-completed",
+                "https://media.example/present.mp4",
+                "present.mp4",
+                "mp4",
+                output_directory=output_root,
+            )
+            service.store.set_status("present-completed", "downloading")
+            service.store.set_status("present-completed", "finalizing")
+            service.store.set_status("present-completed", "completed")
+            (output_root / "present.mp4").touch()
+
+            tasks = service.list_tasks()
+
+            self.assertEqual(
+                {task["taskId"] for task in tasks},
+                {"active-task", "present-completed"},
+            )
+            self.assertFalse((service.state_dir / "missing-completed.json").exists())
+            self.assertFalse((service.state_dir / "missing-paused.json").exists())
 
     def test_start_rejects_a_duplicate_media_download(self):
         processes = []

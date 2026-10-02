@@ -362,6 +362,11 @@ class TaskService:
             progress = {task_id: dict(values) for task_id, values in self.progress.items()}
         tasks = []
         for task in self.store.list_tasks():
+            if task["status"] not in {"queued", "downloading", "finalizing"}:
+                output_path = self._task_directory(task) / Path(task["outputName"]).name
+                if not output_path.is_file():
+                    self.store.delete(task["taskId"])
+                    continue
             public_task = self.public_task(task)
             public_task.update(progress.get(public_task["taskId"], {}))
             tasks.append(public_task)

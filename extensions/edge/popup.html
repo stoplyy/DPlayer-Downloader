@@ -9,12 +9,35 @@
 <body>
   <header class="masthead">
     <div class="brand"><span class="brand-mark">F</span><span>FRAME <small>MEDIA TOOL</small></span></div>
-    <button id="refreshTasks" class="icon-button" title="刷新任务" aria-label="刷新任务">↻</button>
+    <div class="masthead-actions">
+      <button id="settingsButton" class="icon-button" title="设置" aria-label="设置">⚙</button>
+      <button id="refreshTasks" class="icon-button" title="刷新任务" aria-label="刷新任务">↻</button>
+    </div>
   </header>
+  <section id="settingsPanel" class="settings-panel" hidden>
+    <div class="section-heading"><h2>设置</h2><button id="closeSettings" class="text-button">关闭</button></div>
+    <label class="settings-label" for="downloadDirectory">下载保存路径</label>
+    <div class="settings-row">
+      <input id="downloadDirectory" class="settings-input" type="text" placeholder="留空使用默认目录" spellcheck="false">
+      <button id="saveDownloadDirectory" class="text-button">保存</button>
+    </div>
+    <div id="defaultDirectory" class="option-note"></div>
+    <label class="settings-label" for="allowedSiteInput">自动允许访问的站点</label>
+    <div class="settings-row">
+      <input id="allowedSiteInput" class="settings-input" type="text" placeholder="例如 media.example.com" spellcheck="false">
+      <button id="addAllowedSite" class="text-button">添加</button>
+    </div>
+    <div id="allowedSiteList" class="allowed-site-list"></div>
+    <div class="option-note">匹配该域名及其子域名的媒体资源，扫描时自动勾选。</div>
+  </section>
   <section class="page-info">
     <div class="eyebrow">当前标签页</div>
     <div id="pageTitle" class="page-title">等待扫描</div>
-    <div id="bridgeStatus" class="bridge-status"><span class="status-dot"></span><span>正在连接本机下载器</span></div>
+    <div class="bridge-row">
+      <div id="bridgeStatus" class="bridge-status"><span class="status-dot"></span><span id="bridgeStatusText">正在连接本机下载器</span></div>
+      <button id="bridgeAction" class="bridge-button" type="button">启动服务</button>
+    </div>
+    <div id="bridgeHint" class="bridge-hint" hidden></div>
   </section>
   <main>
     <div class="section-heading">

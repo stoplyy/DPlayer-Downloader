@@ -11,6 +11,7 @@ from pathlib import Path
 from host.downloader import build_download_command, build_download_environment
 from host.progress import parse_download_progress
 from host.proxy import EgressProxy
+from host.settings_store import SettingsStore
 from host.task_store import TaskStore
 
 
@@ -35,10 +36,11 @@ class TaskService:
         base = Path(root) if root else local_app_data / "FrameVideoDownloader"
         self.state_dir = base / "state"
         self.secrets_dir = base / "secrets"
-        self.output_dir = Path(output_root) if output_root else Path.home() / "Downloads" / "FrameVideos"
+        self.default_output_dir = Path(output_root) if output_root else Path.home() / "Downloads" / "FrameVideos"
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.secrets_dir.mkdir(parents=True, exist_ok=True)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.default_output_dir.mkdir(parents=True, exist_ok=True)
+        self.settings = SettingsStore(base, self.default_output_dir)
         self.store = TaskStore(self.state_dir, protector=protector)
         self.send_update = send_update
         self.executable = executable or self._find_tool("yt-dlp.exe", "yt-dlp")
@@ -48,6 +50,47 @@ class TaskService:
         self.progress = {}
         self.lock = threading.RLock()
         self._clean_stale_cookie_files()
+        self._reconcile_orphaned_tasks()
+
+    def _reconcile_orphaned_tasks(self):
+        """Repair task state left behind when the host process died abruptly.
+
+        A fresh host owns no worker processes, so any task still marked as
+        queued/downloading/finalizing has no running process behind it. Flag
+        those as interrupted so the UI can offer an explicit recovery action
+        instead of showing a task that appears to be stuck forever.
+        """
+        for task in self.store.list_tasks():
+            if task["status"] not in {"queued", "downloading", "finalizing"}:
+                continue
+            try:
+                self.store.set_status(
+                    task["taskId"],
+                    "interrupted",
+                    "The local download worker stopped before the task finished",
+                )
+            except ValueError:
+                continue
+
+    @property
+    def output_dir(self):
+        return Path(self.settings.get()["downloadDirectory"])
+
+    def get_settings(self):
+        return self.settings.get()
+
+    def set_download_directory(self, value):
+        return self.settings.set_download_directory(value)
+
+    def health(self):
+        directory = self.output_dir
+        ffmpeg = Path(self.ffmpeg_location) / "ffmpeg.exe" if self.ffmpeg_location else None
+        return {
+            "ytDlpAvailable": bool(self.executable),
+            "ffmpegAvailable": ffmpeg is not None and ffmpeg.is_file(),
+            "downloadDirectory": str(directory),
+            "downloadDirectoryWritable": os.access(directory, os.W_OK),
+        }
 
     @staticmethod
     def _tool_directory():
@@ -89,17 +132,39 @@ class TaskService:
 
     def start(self, message):
         task_id = message["taskId"]
+        page_url = message.get("pageUrl")
+        video_id = message.get("videoId")
         with self.lock:
             if task_id in self.jobs:
                 raise ValueError("This task is already running")
+            duplicate = self.store.find_duplicate(message["url"], page_url=page_url, video_id=video_id)
+            if duplicate is not None:
+                raise ValueError(
+                    f"该资源已存在下载任务（{duplicate['outputName']}，状态 {duplicate['status']}），已跳过重复下载"
+                )
             record = self.store.create(
                 task_id,
                 message["url"],
                 message["outputName"],
                 message["mediaType"],
                 use_cookies=message["useCookies"],
+                page_url=page_url,
+                video_id=video_id,
+                output_directory=self.output_dir,
             )
         return self._launch(record, message.get("cookies", []))
+
+    def check_duplicate(self, url, page_url=None, video_id=None):
+        """Report whether the media already has a blocking task, without starting one."""
+        duplicate = self.store.find_duplicate(url, page_url=page_url, video_id=video_id)
+        if duplicate is None:
+            return {"duplicate": False}
+        return {
+            "duplicate": True,
+            "taskId": duplicate["taskId"],
+            "status": duplicate["status"],
+            "outputName": duplicate["outputName"],
+        }
 
     def resume(self, task_id, cookies=None):
         with self.lock:
@@ -118,7 +183,7 @@ class TaskService:
         if not self.executable:
             self.store.set_status(record["taskId"], "failed", "yt-dlp executable is unavailable")
             raise RuntimeError("yt-dlp executable is unavailable")
-        task_directory = self.output_dir / record["taskId"]
+        task_directory = self._task_directory(record)
         task_directory.mkdir(parents=True, exist_ok=True)
         output = task_directory / Path(record["outputName"]).name
         proxy = EgressProxy()
@@ -138,6 +203,9 @@ class TaskService:
                 self.store.set_status(record["taskId"], "downloading")
                 record["status"] = "downloading"
             popen_kwargs = {
+                # Native Messaging stdin belongs exclusively to the host.
+                # Children must not inherit or wait on the browser's pipe.
+                "stdin": subprocess.DEVNULL,
                 "stdout": subprocess.PIPE,
                 "stderr": subprocess.STDOUT,
                 "text": True,
@@ -309,7 +377,7 @@ class TaskService:
             task = self.store.get(task_id)
             if task["status"] in {"downloading", "finalizing"}:
                 raise ValueError("Stop the task before deleting it")
-            task_directory = self.output_dir / task_id
+            task_directory = self._task_directory(task)
             if task_directory.exists():
                 shutil.rmtree(task_directory)
             self.store.delete(task_id)
@@ -323,6 +391,11 @@ class TaskService:
         if action not in {"pause", "cancel"}:
             raise ValueError("Unsupported task action")
         if not job:
+            record = self.store.get(task_id)
+            if action == "cancel" and record["status"] in {"queued", "paused", "interrupted", "failed"}:
+                task = self.public_task(self.store.set_status(task_id, "cancelled"))
+                self._emit_task(task_id)
+                return task
             raise ValueError("Task is not running")
         target_status = "paused" if action == "pause" else "cancelled"
         with job.lock:
@@ -335,14 +408,19 @@ class TaskService:
     def open_directory(self, task_id):
         if not TASK_ID_RE.fullmatch(task_id):
             raise ValueError("Invalid task ID")
-        self.store.get(task_id)
-        task_directory = self.output_dir / task_id
+        task = self.store.get(task_id)
+        task_directory = self._task_directory(task)
         if not task_directory.is_dir():
             raise FileNotFoundError("Task output directory does not exist")
         if os.name != "nt":
             raise OSError("Opening task folders is supported on Windows only")
         os.startfile(str(task_directory))
         return {"taskId": task_id, "status": "opened"}
+
+    def _task_directory(self, task):
+        # A settings change only affects new tasks. Existing partials and
+        # completed files must still be opened/resumed/deleted in their folder.
+        return Path(task.get("outputDirectory") or self.output_dir) / task["taskId"]
 
     def _terminate_tree(self, process):
         if process.poll() is not None:

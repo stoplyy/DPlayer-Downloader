@@ -50,6 +50,49 @@ class TaskStoreTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 store.create("task-4", "https://media.example/video.m3u8", "..\\outside.mp4", "hls")
 
+    def test_persists_a_media_key_for_duplicate_detection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory), protector=TestProtector())
+            store.create("task-5", "https://media.example/video.m3u8?auth_key=aaa&v=3", "video.mp4", "hls")
+
+            task = store.get("task-5")
+
+            self.assertRegex(task["mediaKey"], r"^[0-9a-f]{16}$")
+            self.assertNotIn("auth_key", task["displayUrl"])
+
+    def test_finds_a_duplicate_across_differently_signed_urls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory), protector=TestProtector())
+            store.create("task-6", "https://hls.example.com/a/b.m3u8?auth_key=aaa&v=3&time=0", "video.mp4", "hls")
+
+            duplicate = store.find_duplicate("https://hls.example.com/a/b.m3u8?auth_key=bbb&v=3&time=99")
+
+            self.assertIsNotNone(duplicate)
+            self.assertEqual(duplicate["taskId"], "task-6")
+
+    def test_does_not_report_a_duplicate_for_a_different_video(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory), protector=TestProtector())
+            store.create("task-7", "https://hls.example.com/a/b.m3u8", "video.mp4", "hls")
+
+            self.assertIsNone(store.find_duplicate("https://hls.example.com/a/c.m3u8"))
+
+    def test_allows_retrying_a_cancelled_task(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory), protector=TestProtector())
+            store.create("task-8", "https://hls.example.com/a/b.m3u8", "video.mp4", "hls")
+            store.set_status("task-8", "cancelled")
+
+            self.assertIsNone(store.find_duplicate("https://hls.example.com/a/b.m3u8"))
+
+    def test_excludes_the_task_being_resumed_from_its_own_duplicate_check(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = TaskStore(Path(directory), protector=TestProtector())
+            store.create("task-9", "https://hls.example.com/a/b.m3u8", "video.mp4", "hls")
+
+            self.assertIsNotNone(store.find_duplicate("https://hls.example.com/a/b.m3u8"))
+            self.assertIsNone(store.find_duplicate("https://hls.example.com/a/b.m3u8", exclude_task_id="task-9"))
+
     @unittest.skipUnless(os.name == "nt", "Windows DPAPI integration test")
     def test_windows_dpapi_round_trip(self):
         protector = WindowsDataProtector()

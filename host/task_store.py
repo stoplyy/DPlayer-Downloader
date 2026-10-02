@@ -8,6 +8,8 @@ from ctypes import wintypes
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from host.media_identity import find_duplicate_by_identity, task_identity
+
 
 TASK_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 OUTPUT_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,150}\.mp4$")
@@ -16,7 +18,7 @@ ALLOWED_TRANSITIONS = {
     "downloading": {"paused", "interrupted", "finalizing", "completed", "failed", "cancelled"},
     "paused": {"downloading", "cancelled", "failed"},
     "interrupted": {"downloading", "cancelled", "failed"},
-    "finalizing": {"completed", "interrupted", "failed"},
+    "finalizing": {"completed", "interrupted", "paused", "cancelled", "failed"},
     "failed": {"downloading", "cancelled"},
     "completed": set(),
     "cancelled": set(),
@@ -65,7 +67,7 @@ class TaskStore:
         self.directory.mkdir(parents=True, exist_ok=True)
         self.protector = protector or WindowsDataProtector()
 
-    def create(self, task_id, url, output_name, media_type, use_cookies=False):
+    def create(self, task_id, url, output_name, media_type, use_cookies=False, page_url=None, video_id=None, output_directory=None):
         self._validate_task_id(task_id)
         parsed = urlsplit(url)
         if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
@@ -74,18 +76,39 @@ class TaskStore:
             raise ValueError("Output name must be a safe MP4 filename")
         if media_type not in ("hls", "mp4", "webm"):
             raise ValueError("Unsupported media type")
+        identity = task_identity(url, page_url=page_url, video_id=video_id)
+        if identity is None:
+            raise ValueError("Media URL cannot be identified")
         record = {
             "taskId": task_id,
             "displayUrl": f"{parsed.scheme}://{parsed.netloc}{parsed.path}",
             "protectedUrl": self.protector.protect(url),
+            "mediaKey": identity["mediaKey"],
+            "contentKey": identity["contentKey"],
             "outputName": output_name,
             "mediaType": media_type,
             "useCookies": bool(use_cookies),
             "status": "queued",
             "error": None,
         }
+        if output_directory is not None:
+            record["outputDirectory"] = str(Path(output_directory).resolve())
         self._write(task_id, record)
         return self.get(task_id)
+
+    def find_duplicate(self, url, exclude_task_id=None, page_url=None, video_id=None):
+        """Return an existing task for the same media, or None.
+
+        Matching prefers the page's video id (stable across re-signed CDN paths
+        and across renditions) and falls back to the signature-free media URL.
+        """
+        identity = task_identity(url, page_url=page_url, video_id=video_id)
+        if identity is None:
+            return None
+        candidates = [
+            task for task in self.list_tasks() if task["taskId"] != exclude_task_id
+        ]
+        return find_duplicate_by_identity(identity, candidates)
 
     def get(self, task_id):
         record = self._read(task_id)

@@ -66,7 +66,7 @@ if ($LASTEXITCODE -ne 0 -or $PyInstaller -ne '6.20.0') {
 }
 
 $Extension = Join-Path $ProjectRoot 'extensions/edge'
-foreach ($Required in @('manifest.json', 'popup.html', 'popup.css', 'popup.js', 'service_worker.js', 'scanner.mjs', 'cookie_authorization.mjs', 'task_actions.mjs', 'size_display.mjs', 'probe_queue.mjs')) {
+foreach ($Required in @('manifest.json', 'popup.html', 'popup.css', 'popup.js', 'service_worker.js', 'scanner.mjs', 'cookie_authorization.mjs', 'task_actions.mjs', 'size_display.mjs', 'probe_queue.mjs', 'settings.mjs', 'bridge_status.mjs', 'media_identity.mjs')) {
     Assert-File (Join-Path $Extension $Required) "extensions/edge/$Required"
 }
 

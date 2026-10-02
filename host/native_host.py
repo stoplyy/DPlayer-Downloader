@@ -7,10 +7,11 @@ from urllib.parse import urlsplit
 
 from host.task_service import TaskService
 from host.probing import probe_size
+from host.protocol_version import PROTOCOL_VERSION
 
 
 MAX_MESSAGE_BYTES = 1024 * 1024
-ALLOWED_MESSAGE_TYPES = {"ping", "list", "start", "resume", "pause", "cancel", "delete", "openDirectory", "probeSize"}
+ALLOWED_MESSAGE_TYPES = {"ping", "list", "start", "resume", "pause", "cancel", "delete", "openDirectory", "probeSize", "getSettings", "setDownloadDirectory", "health", "checkDuplicate"}
 
 
 def _read_exact(stream, length):
@@ -25,7 +26,7 @@ def _read_exact(stream, length):
     return bytes(chunks)
 
 
-def decode_message(stream):
+def decode_message(stream, validate=True):
     header = _read_exact(stream, 4)
     if header is None:
         return None
@@ -36,7 +37,7 @@ def decode_message(stream):
     if payload is None:
         raise EOFError("Missing Native Messaging message body")
     message = json.loads(payload.decode("utf-8"))
-    return validate_message(message)
+    return validate_message(message) if validate else message
 
 
 def encode_message(message):
@@ -55,13 +56,17 @@ def validate_message(message):
     allowed_keys = {
         "ping": {"id", "type"},
         "list": {"id", "type"},
-        "start": {"id", "type", "taskId", "url", "outputName", "mediaType", "useCookies", "cookies"},
+        "start": {"id", "type", "taskId", "url", "outputName", "mediaType", "useCookies", "cookies", "pageUrl", "videoId"},
         "resume": {"id", "type", "taskId", "cookies"},
         "pause": {"id", "type", "taskId"},
         "cancel": {"id", "type", "taskId"},
         "delete": {"id", "type", "taskId", "confirmed"},
         "openDirectory": {"id", "type", "taskId"},
         "probeSize": {"id", "type", "url"},
+        "getSettings": {"id", "type"},
+        "setDownloadDirectory": {"id", "type", "downloadDirectory"},
+        "health": {"id", "type"},
+        "checkDuplicate": {"id", "type", "url", "pageUrl", "videoId"},
     }
     if set(message) - allowed_keys[message_type]:
         raise ValueError("Message contains unsupported fields")
@@ -101,9 +106,25 @@ def validate_message(message):
             parsed_url.port
         except ValueError as error:
             raise ValueError("Invalid probe URL") from error
+    if message_type == "checkDuplicate":
+        url = message.get("url")
+        if not isinstance(url, str) or len(url) > 8192:
+            raise ValueError("Invalid media URL")
+        parsed_url = urlsplit(url)
+        if parsed_url.scheme not in ("http", "https") or not parsed_url.hostname or parsed_url.username or parsed_url.password:
+            raise ValueError("Only credential-free HTTP(S) media URLs are allowed")
+    if message_type in {"start", "checkDuplicate"}:
+        for field in ("pageUrl", "videoId"):
+            if field in message and not isinstance(message[field], str):
+                raise ValueError(f"Invalid {field}")
+            if isinstance(message.get(field), str) and len(message[field]) > 8192:
+                raise ValueError(f"Invalid {field}")
     if message_type in {"resume", "pause", "cancel", "delete", "openDirectory"}:
         if not isinstance(message.get("taskId"), str):
             raise ValueError("Task ID is required")
+    if message_type == "setDownloadDirectory":
+        if not isinstance(message.get("downloadDirectory"), str):
+            raise ValueError("Download directory is required")
     if message_type == "resume" and "cookies" in message and not isinstance(message["cookies"], list):
         raise ValueError("Invalid resume cookie records")
     if message_type == "delete" and not isinstance(message.get("confirmed"), bool):
@@ -132,15 +153,17 @@ def main():
         while True:
             message = {}
             try:
-                message = decode_message(source)
+                message = decode_message(source, validate=False)
                 if message is None:
                     break
+                # Preserve the ID so invalid requests get an immediate reply.
+                validate_message(message)
                 request_id = message.get("id")
                 if message["type"] == "probeSize":
                     probe_workers.submit(run_probe, request_id, message["url"])
                     continue
                 if message["type"] == "ping":
-                    response = {"type": "pong"}
+                    response = {"type": "pong", "protocolVersion": PROTOCOL_VERSION}
                 elif message["type"] == "list":
                     response = {"type": "tasks", "tasks": service.list_tasks()}
                 elif message["type"] == "start":
@@ -155,15 +178,30 @@ def main():
                     response = {"type": "ack", "task": service.action(message["taskId"], "delete")}
                 elif message["type"] == "openDirectory":
                     response = {"type": "ack", "task": service.open_directory(message["taskId"])}
+                elif message["type"] == "getSettings":
+                    response = {"type": "settings", "settings": service.get_settings()}
+                elif message["type"] == "setDownloadDirectory":
+                    response = {"type": "settings", "settings": service.set_download_directory(message["downloadDirectory"])}
+                elif message["type"] == "health":
+                    response = {"type": "health", "health": service.health()}
+                elif message["type"] == "checkDuplicate":
+                    response = {"type": "duplicate", "duplicate": service.check_duplicate(
+                        message["url"],
+                        page_url=message.get("pageUrl"),
+                        video_id=message.get("videoId"),
+                    )}
                 response["replyTo"] = request_id
                 send(response)
             except EOFError:
                 break
             except (ValueError, OSError) as error:
-                send({"type": "error", "replyTo": message.get("id"), "error": str(error)[:240]})
+                request_id = message.get("id") if isinstance(message, dict) else None
+                send({"type": "error", "replyTo": request_id, "error": str(error)[:240]})
             except Exception:
-                send({"type": "error", "replyTo": message.get("id"), "error": "Local task operation failed"})
-    service.close()
+                request_id = message.get("id") if isinstance(message, dict) else None
+                send({"type": "error", "replyTo": request_id, "error": "Local task operation failed"})
+        # Stop downloads promptly on EOF, before waiting for size probes.
+        service.close()
 
 
 if __name__ == "__main__":

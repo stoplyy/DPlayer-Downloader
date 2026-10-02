@@ -25,3 +25,28 @@ Run its unit test with:
 ```powershell
 python -m unittest discover -s tools -t . -v
 ```
+
+## Local browser verification fixtures
+
+`browser_fixture.py` generates two four-second MP4 files, an eight-second HLS
+stream, and pages covering missing video IDs, multiple players, and multiple
+renditions of one video. It uses the installed downloader's FFmpeg and serves
+the pages on loopback:
+
+```powershell
+python tools/browser_fixture.py serve
+```
+
+Open `http://127.0.0.1:8766/no-id.html`, `/multi.html`, or `/renditions.html`
+in an isolated Edge profile. Media uses the reserved name `media.fixture.test`.
+For end-to-end downloads, register the script's `native` mode under a separate
+test Native Messaging host and point an isolated extension copy at that host.
+Do not replace the production registration. The fixture host runs the production
+protocol and downloader with separate task state and permits only its local
+fixture media address. Production network checks remain unchanged.
+
+Generated media, isolated state, download files, and browser evidence are kept
+under the ignored `output/playwright/` directory. Exercise duplicate detection,
+pause/resume, deletion, service stop/start, and changing the output directory
+while a task is paused; verify resulting files with FFprobe. Remove the temporary
+test-host registry entry when the isolated browser is closed.

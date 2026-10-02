@@ -11,6 +11,9 @@ node_modules/
 # PyInstaller / release build outputs
 .build/
 .build-*/
+.devbuild/
+output/playwright/
+.playwright-cli/
 dist/
 *.spec
 

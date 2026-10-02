@@ -1,10 +1,21 @@
 import { authorizeCookies } from './cookie_authorization.mjs';
+import { describeHealth } from './bridge_status.mjs';
+import { findDuplicateTaskByIdentity, taskIdentity } from './media_identity.mjs';
 import { formatSizeResult } from './size_display.mjs';
 import { runProbeQueue } from './probe_queue.mjs';
+import {
+  DEFAULT_SETTINGS,
+  hostMatchesAllowedSite,
+  loadSettings,
+  normalizeDownloadDirectory,
+  normalizeHostname,
+  saveSettings,
+} from './settings.mjs';
 
 const candidates = new Map();
 const candidateSizeNodes = new Map();
 const tasks = new Map();
+const taskRows = new Map();
 const candidateList = document.querySelector('#candidateList');
 const taskList = document.querySelector('#taskList');
 const emptyState = document.querySelector('#emptyState');
@@ -12,10 +23,21 @@ const bridgeStatus = document.querySelector('#bridgeStatus');
 const notice = document.querySelector('#notice');
 let noticeTimer;
 let candidateScanGeneration = 0;
+let settings = { ...DEFAULT_SETTINGS };
 
 async function requestWorker(type, values = {}) {
-  const response = await chrome.runtime.sendMessage({ type, ...values });
-  if (!response?.ok) throw new Error(response?.error || '扩展后台请求失败');
+  let response;
+  try {
+    response = await chrome.runtime.sendMessage({ type, ...values });
+  } catch (error) {
+    // The service worker failed to load or was torn down mid-request. Report
+    // the underlying reason so it is not mistaken for a downloader failure.
+    throw new Error(`扩展后台不可用（${error?.message || '未知原因'}）：请在 edge://extensions 重新加载扩展`);
+  }
+  if (!response) {
+    throw new Error('扩展后台无响应：请在 edge://extensions 点击“重新加载”，并确认已运行 installer\\install.ps1');
+  }
+  if (!response.ok) throw new Error(response.error || '扩展后台请求失败');
   return response.result;
 }
 
@@ -26,10 +48,62 @@ function showNotice(message) {
   noticeTimer = setTimeout(() => { notice.hidden = true; }, 4500);
 }
 
-function setBridgeState(connected, message) {
-  bridgeStatus.classList.toggle('connected', connected);
-  bridgeStatus.classList.toggle('error', !connected && Boolean(message));
-  bridgeStatus.lastElementChild.textContent = message || (connected ? '本机下载器已连接' : '本机下载器未连接');
+// Renders the explicit bridge state produced by the service worker, including
+// the recovery action the user can take for the current failure code.
+function renderBridgeState(state, connected) {
+  const text = document.querySelector('#bridgeStatusText');
+  const actionButton = document.querySelector('#bridgeAction');
+  const hint = document.querySelector('#bridgeHint');
+  const status = state?.status || (connected ? 'connected' : 'idle');
+  const isConnected = connected === true && status === 'connected';
+
+  bridgeStatus.classList.toggle('connected', isConnected);
+  bridgeStatus.classList.toggle('error', !isConnected && status === 'disconnected');
+  text.textContent = state?.message || (isConnected ? '本机下载服务已连接' : '本机下载服务未启动');
+
+  if (status === 'connecting') {
+    actionButton.textContent = '启动中…';
+    actionButton.disabled = true;
+  } else if (isConnected) {
+    actionButton.textContent = '停止服务';
+    actionButton.disabled = false;
+  } else {
+    actionButton.textContent = '启动服务';
+    actionButton.disabled = false;
+  }
+
+  const action = !isConnected ? state?.action : '';
+  hint.textContent = action || '';
+  hint.hidden = !action;
+}
+
+async function startOrStopBridge() {
+  const button = document.querySelector('#bridgeAction');
+  const wasConnected = bridgeStatus.classList.contains('connected');
+  button.disabled = true;
+  try {
+    const result = wasConnected ? await requestWorker('stopBridge') : await requestWorker('startBridge');
+    renderBridgeState(result.state, result.connected);
+    if (!wasConnected && result.state?.status === 'connected') {
+      showNotice('本机下载服务已启动');
+      await refreshHostSettings();
+      await refreshTasks();
+    }
+  } catch (error) {
+    showNotice(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function showDiagnostics() {
+  try {
+    const result = await requestWorker('health');
+    const lines = describeHealth(result.health).map(([label, value]) => `${label}：${value}`);
+    showNotice(lines.join(' · '));
+  } catch (error) {
+    showNotice(`诊断失败：${error.message}`);
+  }
 }
 
 function selectedCandidates() {
@@ -44,7 +118,7 @@ function updateSelection() {
   document.querySelector('#downloadButton').disabled = count === 0;
 }
 
-function renderCandidates(foundCandidates) {
+function renderCandidates(foundCandidates, pageUrl) {
   const scanGeneration = ++candidateScanGeneration;
   candidates.clear();
   candidateSizeNodes.clear();
@@ -54,12 +128,13 @@ function renderCandidates(foundCandidates) {
 
   for (const [index, candidate] of foundCandidates.entries()) {
     const itemId = `candidate-${index}`;
-    candidates.set(itemId, candidate);
+    candidates.set(itemId, { ...candidate, pageUrl });
     const row = document.createElement('label');
     row.className = 'candidate';
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.value = itemId;
+    checkbox.checked = hostMatchesAllowedSite(new URL(candidate.displayUrl).hostname, settings.allowedSites);
     checkbox.addEventListener('change', updateSelection);
     const details = document.createElement('span');
     details.className = 'candidate-details';
@@ -69,6 +144,7 @@ function renderCandidates(foundCandidates) {
     const address = document.createElement('span');
     address.className = 'candidate-url';
     address.textContent = candidate.displayUrl;
+    address.title = candidate.displayUrl;
     const size = document.createElement('span');
     size.className = 'candidate-size';
     size.textContent = formatSizeResult({ status: 'pending' });
@@ -91,22 +167,33 @@ function renderCandidates(foundCandidates) {
 
 function renderTasks(taskItems) {
   tasks.clear();
+  taskRows.clear();
   taskList.replaceChildren();
   document.querySelector('#taskSection').hidden = taskItems.length === 0;
   for (const task of taskItems) {
     tasks.set(task.taskId, task);
     const row = document.createElement('div');
     row.className = 'task-row';
+    taskRows.set(task.taskId, row);
     const top = document.createElement('div');
     top.className = 'task-top';
     const name = document.createElement('span');
     name.className = 'task-name';
     name.textContent = task.outputName || task.taskId;
+    name.title = name.textContent;
     const state = document.createElement('span');
     state.className = 'task-state';
-    state.textContent = task.error ? `${task.status}: ${task.error}` : task.status === 'finalizing' ? '正在合并' : task.status || 'queued';
+    const stateLabels = { queued: '等待中', downloading: '下载中', finalizing: '正在合并', completed: '已完成', paused: '已暂停', interrupted: '已中断', failed: '下载失败', cancelled: '已取消' };
+    state.textContent = stateLabels[task.status] || task.status || '等待中';
+    state.dataset.status = task.status || 'queued';
     top.append(name, state);
     row.append(top);
+    if (task.error) {
+      const error = document.createElement('div');
+      error.className = 'task-error';
+      error.textContent = task.error;
+      row.append(error);
+    }
 
     const progress = document.createElement('div');
     progress.className = 'progress-track';
@@ -118,13 +205,8 @@ function renderTasks(taskItems) {
 
     const progressDetails = document.createElement('div');
     progressDetails.className = 'progress-details';
-    if (task.status === 'downloading') {
-      const percent = Number.isFinite(Number(task.percent)) ? `${Number(task.percent).toFixed(1)}%` : '进度计算中';
-      const speed = task.speed || '速度计算中';
-      const eta = task.eta ? `剩余 ${task.eta}` : '预计时间计算中';
-      progressDetails.textContent = [percent, speed, eta].join(' · ');
-    }
-    if (progressDetails.textContent) row.append(progressDetails);
+    row.append(progressDetails);
+    updateTaskProgress(task, row);
 
     const actions = document.createElement('div');
     actions.className = 'task-actions';
@@ -144,6 +226,7 @@ function renderTasks(taskItems) {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = label;
+      if (['cancel', 'delete'].includes(action)) button.className = 'danger';
       button.addEventListener('click', () => runTaskAction(task, action));
       actions.append(button);
     };
@@ -156,19 +239,39 @@ function renderTasks(taskItems) {
   }
 }
 
+function updateTaskProgress(task, row) {
+  row.querySelector('.progress-fill').style.width = `${Math.max(0, Math.min(100, Number(task.percent) || 0))}%`;
+  const details = row.querySelector('.progress-details');
+  details.hidden = task.status !== 'downloading';
+  if (!details.hidden) {
+    const percent = Number.isFinite(Number(task.percent)) ? `${Number(task.percent).toFixed(1)}%` : '进度计算中';
+    details.textContent = [percent, task.speed || '速度计算中', task.eta ? `剩余 ${task.eta}` : '预计时间计算中'].join(' · ');
+  }
+}
+
 async function refreshTasks() {
   try {
     const response = await requestWorker('listTasks');
-    setBridgeState(true);
+    renderBridgeState({ status: 'connected', message: '本机下载服务已连接' }, true);
     renderTasks(response.tasks || []);
   } catch (error) {
-    setBridgeState(false, '本机下载器未连接');
+    // The service worker owns the real state; do not overwrite it with a guess.
+    await refreshBridgeState();
+  }
+}
+
+async function refreshBridgeState() {
+  try {
+    const result = await requestWorker('bridgeState');
+    renderBridgeState(result.state, result.connected);
+  } catch {
+    renderBridgeState(null, false);
   }
 }
 
 async function runTaskAction(task, action) {
   try {
-    if (action === 'delete' && !window.confirm(`删除“${task.outputName}”及其未完成数据？`)) return;
+    if (action === 'delete' && !window.confirm(`删除“${task.outputName}”及其下载文件和未完成数据？`)) return;
     let cookies;
     if (action === 'resume' && task.requiresLogin) {
       const [authorized] = await authorizeCookies([{ url: task.displayUrl }]);
@@ -193,7 +296,7 @@ async function scan() {
   try {
     const result = await requestWorker('scan');
     document.querySelector('#pageTitle').textContent = result.title;
-    renderCandidates(result.candidates);
+    renderCandidates(result.candidates, result.pageUrl);
   } catch (error) {
     showNotice(error.message);
   } finally {
@@ -210,7 +313,41 @@ async function downloadSelected() {
   button.disabled = true;
   try {
     const authorizedCookies = useCookies ? await authorizeCookies(selected) : selected.map((candidate) => ({ candidate, cookies: [] }));
+    let started = 0;
+    const skipped = [];
+    // Renditions of one video (video / video_h265) share a content identity, so
+    // selecting both must not queue the same video twice.
+    const queuedContentKeys = new Set();
     for (const entry of authorizedCookies) {
+      const identity = taskIdentity({
+        url: entry.candidate.url,
+        pageUrl: entry.candidate.pageUrl,
+        ...(entry.candidate.videoId ? { videoId: entry.candidate.videoId } : {}),
+      });
+      if (!identity) {
+        skipped.push({ reason: '无法识别该资源地址' });
+        continue;
+      }
+      if (identity.contentKey && queuedContentKeys.has(identity.contentKey)) {
+        skipped.push({ reason: '本次已选择同一视频的其他清晰度' });
+        continue;
+      }
+      // Check both the local task list and the host, so a task started in
+      // another popup session is still detected as a duplicate.
+      const known = findDuplicateTaskByIdentity(identity, [...tasks.values()]);
+      if (known) {
+        skipped.push({ reason: `已存在相同任务（${known.outputName}）`, taskId: known.taskId });
+        continue;
+      }
+      const { duplicate: remote } = await requestWorker('checkDuplicate', {
+        url: entry.candidate.url,
+        ...(entry.candidate.videoId ? { videoId: entry.candidate.videoId } : {}),
+        pageUrl: entry.candidate.pageUrl,
+      });
+      if (remote?.duplicate === true) {
+        skipped.push({ reason: `已存在相同任务（${remote.outputName}）`, taskId: remote.taskId });
+        continue;
+      }
       const taskId = crypto.randomUUID();
       const outputName = `video-${new Date().toISOString().replace(/[:.]/g, '-')}.mp4`;
       const task = {
@@ -218,12 +355,20 @@ async function downloadSelected() {
         url: entry.candidate.url,
         outputName,
         mediaType: entry.candidate.type,
+        pageUrl: entry.candidate.pageUrl,
+        ...(entry.candidate.videoId ? { videoId: entry.candidate.videoId } : {}),
         useCookies,
       };
       if (useCookies) task.cookies = entry.cookies;
       await requestWorker('startTask', { task });
+      if (identity.contentKey) queuedContentKeys.add(identity.contentKey);
+      started += 1;
     }
-    showNotice('已加入下载队列');
+    if (skipped.length) {
+      showNotice(`已跳过 ${skipped.length} 个重复任务：${skipped[0].reason}`);
+    } else {
+      showNotice(`已加入下载队列（${started} 项）`);
+    }
     await refreshTasks();
   } catch (error) {
     showNotice(error.message);
@@ -232,14 +377,128 @@ async function downloadSelected() {
   }
 }
 
+function renderAllowedSites() {
+  const list = document.querySelector('#allowedSiteList');
+  list.replaceChildren();
+  if (!settings.allowedSites.length) {
+    const empty = document.createElement('span');
+    empty.className = 'allowed-site-empty';
+    empty.textContent = '尚未添加站点';
+    list.append(empty);
+    return;
+  }
+  for (const site of settings.allowedSites) {
+    const chip = document.createElement('span');
+    chip.className = 'allowed-site';
+    const label = document.createElement('span');
+    label.textContent = site;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = '×';
+    remove.title = `移除 ${site}`;
+    remove.addEventListener('click', async () => {
+      settings = await saveSettings({ ...settings, allowedSites: settings.allowedSites.filter((item) => item !== site) });
+      renderAllowedSites();
+      applyAllowedSitesToCandidates();
+    });
+    chip.append(label, remove);
+    list.append(chip);
+  }
+}
+
+function applyAllowedSitesToCandidates() {
+  for (const checkbox of candidateList.querySelectorAll('input[type="checkbox"]')) {
+    const candidate = candidates.get(checkbox.value);
+    if (!candidate) continue;
+    checkbox.checked = hostMatchesAllowedSite(new URL(candidate.displayUrl).hostname, settings.allowedSites);
+  }
+  updateSelection();
+}
+
+async function addAllowedSite() {
+  const input = document.querySelector('#allowedSiteInput');
+  const hostname = normalizeHostname(input.value);
+  if (!hostname) {
+    showNotice('请输入有效的域名，例如 media.example.com');
+    return;
+  }
+  if (settings.allowedSites.includes(hostname)) {
+    showNotice('该站点已在允许列表中');
+    return;
+  }
+  settings = await saveSettings({ ...settings, allowedSites: [...settings.allowedSites, hostname] });
+  input.value = '';
+  renderAllowedSites();
+  applyAllowedSitesToCandidates();
+}
+
+async function refreshHostSettings() {
+  try {
+    const result = await requestWorker('getSettings');
+    document.querySelector('#defaultDirectory').textContent = `默认目录：${result.settings.defaultDownloadDirectory}`;
+    if (!document.querySelector('#downloadDirectory').value) {
+      document.querySelector('#downloadDirectory').placeholder = result.settings.downloadDirectory;
+    }
+  } catch (error) {
+    document.querySelector('#defaultDirectory').textContent = '本机下载器未连接，无法读取默认目录';
+  }
+}
+
+async function saveDownloadDirectory() {
+  const input = document.querySelector('#downloadDirectory');
+  const value = normalizeDownloadDirectory(input.value);
+  if (!value) {
+    showNotice('请输入绝对路径，例如 D:\\Videos');
+    return;
+  }
+  try {
+    const result = await requestWorker('setDownloadDirectory', { downloadDirectory: value });
+    input.value = result.settings.downloadDirectory;
+    document.querySelector('#defaultDirectory').textContent = `默认目录：${result.settings.defaultDownloadDirectory}`;
+    showNotice('下载保存路径已更新');
+  } catch (error) {
+    showNotice(error.message);
+  }
+}
+
+function toggleSettingsPanel() {
+  const panel = document.querySelector('#settingsPanel');
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden) refreshHostSettings();
+}
+
+async function initSettings() {
+  try {
+    settings = await loadSettings();
+  } catch {
+    settings = { ...DEFAULT_SETTINGS };
+  }
+  renderAllowedSites();
+}
+
 chrome.runtime.onMessage.addListener((message) => {
-  if (message?.type === 'bridgeStatus') setBridgeState(Boolean(message.connected), message.error || '本机下载器未连接');
+  if (message?.type === 'bridgeStatus') {
+    if (message.state) renderBridgeState(message.state, message.state.status === 'connected');
+    else renderBridgeState(null, false);
+  }
   if (message?.type === 'nativeUpdate') {
     if (message.update?.task) {
+      if (message.update.task.status === 'deleted') {
+        tasks.delete(message.update.task.taskId);
+        renderTasks([...tasks.values()]);
+        return;
+      }
       const current = tasks.get(message.update.task.taskId) || {};
-      tasks.set(message.update.task.taskId, { ...current, ...message.update.task });
-      renderTasks([...tasks.values()]);
+      const task = { ...current, ...message.update.task };
+      tasks.set(task.taskId, task);
+      const row = taskRows.get(task.taskId);
+      if (message.update.type === 'progress' && row) {
+        updateTaskProgress(task, row);
+      } else {
+        renderTasks([...tasks.values()]);
+      }
     }
+    if (message.update?.type === 'bridgeStatus') renderBridgeState(null, Boolean(message.update.connected));
   }
 });
 
@@ -247,6 +506,19 @@ document.querySelector('#scanButton').addEventListener('click', scan);
 document.querySelector('#downloadButton').addEventListener('click', downloadSelected);
 document.querySelector('#refreshTasks').addEventListener('click', refreshTasks);
 document.querySelector('#refreshTasks2').addEventListener('click', refreshTasks);
+document.querySelector('#bridgeAction').addEventListener('click', startOrStopBridge);
+document.querySelector('#bridgeStatus').addEventListener('click', (event) => {
+  if (event.target.closest('#bridgeAction')) return;
+  showDiagnostics();
+});
+document.querySelector('#settingsButton').addEventListener('click', toggleSettingsPanel);
+document.querySelector('#closeSettings').addEventListener('click', toggleSettingsPanel);
+document.querySelector('#addAllowedSite').addEventListener('click', addAllowedSite);
+document.querySelector('#allowedSiteInput').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') addAllowedSite();
+});
+document.querySelector('#saveDownloadDirectory').addEventListener('click', saveDownloadDirectory);
 
-requestWorker('ping').then(() => setBridgeState(true)).catch(() => setBridgeState(false, '本机下载器未连接'));
+initSettings();
+refreshBridgeState();
 refreshTasks();

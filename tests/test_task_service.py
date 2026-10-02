@@ -1,4 +1,5 @@
 import tempfile
+import subprocess
 import threading
 import unittest
 from pathlib import Path
@@ -9,6 +10,31 @@ from host.task_service import TaskService
 
 
 class TaskServiceCookieTests(unittest.TestCase):
+    def test_cancel_a_paused_task_without_a_running_worker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            service = TaskService(lambda message: None, root=Path(directory)/'state', output_root=Path(directory)/'output', protector=TestProtector())
+            service.store.create('paused-task', 'https://media.example/a.mp4', 'a.mp4', 'mp4')
+            service.store.set_status('paused-task', 'downloading')
+            service.store.set_status('paused-task', 'paused')
+            self.assertEqual(service.action('paused-task', 'cancel')['status'], 'cancelled')
+
+    def test_directory_change_preserves_existing_task_output_and_deletion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory)/'output'
+            service = TaskService(lambda message: None, root=Path(directory)/'state', output_root=output_root, protector=TestProtector())
+            service.store.create('old-task', 'https://media.example/a.mp4', 'a.mp4', 'mp4', output_directory=output_root)
+            folder = output_root/'old-task'
+            folder.mkdir()
+            (folder/'a.mp4.part').write_bytes(b'partial')
+            service.set_download_directory(str(Path(directory)/'new-output'))
+            task = service.store.get('old-task')
+            self.assertEqual(service._task_directory(task), folder)
+            with patch('host.task_service.os.startfile', create=True) as startfile:
+                service.open_directory('old-task')
+            startfile.assert_called_once_with(str(folder))
+            service.action('old-task', 'delete')
+            self.assertFalse(folder.exists())
+
     def test_monitor_parses_and_emits_live_downloader_output(self):
         updates = []
         with tempfile.TemporaryDirectory() as directory:
@@ -135,6 +161,174 @@ class TaskServiceCookieTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 service._write_cookie_file("task-2", "https://media.example/video.m3u8", [cookie])
             self.assertEqual(list(service.secrets_dir.glob("*.cookies")), [])
+
+    def test_download_directory_setting_changes_the_task_output_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory) / "output"
+            custom = Path(directory) / "custom-videos"
+            service = TaskService(
+                send_update=lambda message: None,
+                root=Path(directory) / "state",
+                output_root=output_root,
+                executable="yt-dlp.exe",
+                protector=TestProtector(),
+            )
+
+            self.assertEqual(service.output_dir, output_root)
+            settings = service.set_download_directory(str(custom))
+
+            self.assertEqual(settings["downloadDirectory"], str(custom))
+            self.assertEqual(service.output_dir, custom)
+            self.assertEqual(service.get_settings()["defaultDownloadDirectory"], str(output_root))
+
+    def test_startup_reconciles_tasks_left_running_by_an_abrupt_host_exit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "state"
+            output_root = Path(directory) / "output"
+            first = TaskService(
+                send_update=lambda message: None,
+                root=root,
+                output_root=output_root,
+                executable="yt-dlp.exe",
+                protector=TestProtector(),
+            )
+            first.store.create("task-orphan", "https://media.example/video.m3u8", "video.mp4", "hls")
+            first.store.set_status("task-orphan", "downloading")
+            first.store.create("task-done", "https://media.example/done.mp4", "done.mp4", "mp4")
+            first.store.set_status("task-done", "downloading")
+            first.store.set_status("task-done", "finalizing")
+            first.store.set_status("task-done", "completed")
+
+            second = TaskService(
+                send_update=lambda message: None,
+                root=root,
+                output_root=output_root,
+                executable="yt-dlp.exe",
+                protector=TestProtector(),
+            )
+
+            orphaned = second.store.get("task-orphan")
+            self.assertEqual(orphaned["status"], "interrupted")
+            self.assertTrue(orphaned["error"])
+            self.assertEqual(second.store.get("task-done")["status"], "completed")
+            self.assertEqual(second.list_tasks()[0]["requiresLogin"], False)
+
+    def test_health_reports_tool_availability_and_directory_writability(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory) / "output"
+            service = TaskService(
+                send_update=lambda message: None,
+                root=Path(directory) / "state",
+                output_root=output_root,
+                executable="yt-dlp.exe",
+                protector=TestProtector(),
+            )
+
+            health = service.health()
+
+            self.assertEqual(health["ytDlpAvailable"], True)
+            self.assertEqual(health["ffmpegAvailable"], False)
+            self.assertEqual(health["downloadDirectory"], str(output_root))
+            self.assertEqual(health["downloadDirectoryWritable"], True)
+
+    def test_start_rejects_a_duplicate_media_download(self):
+        processes = []
+
+        def start_process(*args, **kwargs):
+            self.assertEqual(kwargs.get('stdin'), subprocess.DEVNULL)
+            process = FakeProcess()
+            processes.append(process)
+            return process
+
+        with tempfile.TemporaryDirectory() as directory:
+            service = TaskService(
+                send_update=lambda message: None,
+                root=Path(directory) / "state",
+                output_root=Path(directory) / "output",
+                executable="yt-dlp.exe",
+                popen=start_process,
+                protector=TestProtector(),
+            )
+            with patch.object(service, "_terminate_tree", side_effect=lambda process: process.stopped.set()):
+                service.start({
+                    "taskId": "task-dup-1",
+                    "url": "https://hls.example.com/a/b.m3u8?auth_key=aaa&v=3&time=0",
+                    "outputName": "video.mp4",
+                    "mediaType": "hls",
+                    "useCookies": False,
+                })
+
+                # A freshly signed URL for the same video must not start again.
+                with self.assertRaises(ValueError) as raised:
+                    service.start({
+                        "taskId": "task-dup-2",
+                        "url": "https://hls.example.com/a/b.m3u8?auth_key=bbb&v=3&time=99",
+                        "outputName": "video-2.mp4",
+                        "mediaType": "hls",
+                        "useCookies": False,
+                    })
+
+                self.assertIn("重复", str(raised.exception))
+                self.assertEqual(len(processes), 1)
+                self.assertEqual([task["taskId"] for task in service.list_tasks()], ["task-dup-1"])
+                service.close()
+
+    def test_check_duplicate_reports_an_existing_task_without_starting_one(self):
+        with tempfile.TemporaryDirectory() as directory:
+            service = TaskService(
+                send_update=lambda message: None,
+                root=Path(directory) / "state",
+                output_root=Path(directory) / "output",
+                executable="yt-dlp.exe",
+                protector=TestProtector(),
+            )
+            service.store.create("task-dup-3", "https://hls.example.com/a/b.m3u8?auth_key=aaa", "video.mp4", "hls")
+
+            found = service.check_duplicate("https://hls.example.com/a/b.m3u8?auth_key=zzz")
+            missing = service.check_duplicate("https://hls.example.com/a/other.m3u8")
+
+            self.assertEqual(found["duplicate"], True)
+            self.assertEqual(found["taskId"], "task-dup-3")
+            self.assertEqual(found["outputName"], "video.mp4")
+            self.assertEqual(missing, {"duplicate": False})
+
+    def test_start_allows_retrying_a_cancelled_task(self):
+        processes = []
+
+        def start_process(*args, **kwargs):
+            process = FakeProcess()
+            processes.append(process)
+            return process
+
+        with tempfile.TemporaryDirectory() as directory:
+            service = TaskService(
+                send_update=lambda message: None,
+                root=Path(directory) / "state",
+                output_root=Path(directory) / "output",
+                executable="yt-dlp.exe",
+                popen=start_process,
+                protector=TestProtector(),
+            )
+            with patch.object(service, "_terminate_tree", side_effect=lambda process: process.stopped.set()):
+                service.start({
+                    "taskId": "task-retry-1",
+                    "url": "https://hls.example.com/a/b.m3u8",
+                    "outputName": "video.mp4",
+                    "mediaType": "hls",
+                    "useCookies": False,
+                })
+                service.action("task-retry-1", "cancel")
+
+                service.start({
+                    "taskId": "task-retry-2",
+                    "url": "https://hls.example.com/a/b.m3u8",
+                    "outputName": "video-2.mp4",
+                    "mediaType": "hls",
+                    "useCookies": False,
+                })
+
+                self.assertEqual(len(processes), 2)
+                service.close()
 
     def test_open_directory_uses_only_the_registered_task_folder(self):
         with tempfile.TemporaryDirectory() as directory:

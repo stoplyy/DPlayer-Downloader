@@ -9,10 +9,11 @@ import time
 from pathlib import Path
 
 from host.downloader import build_download_command, build_download_environment
+from host.media_identity import task_identity
 from host.progress import parse_download_progress
 from host.proxy import EgressProxy
 from host.settings_store import SettingsStore
-from host.task_store import TaskStore
+from host.task_store import OUTPUT_NAME_PATTERN, TaskStore
 
 
 TASK_ID_RE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
@@ -134,6 +135,15 @@ class TaskService:
         task_id = message["taskId"]
         page_url = message.get("pageUrl")
         video_id = message.get("videoId")
+        output_name = message["outputName"]
+        if not isinstance(output_name, str) or not OUTPUT_NAME_PATTERN.fullmatch(output_name):
+            raise ValueError("Output name must be a safe MP4 filename")
+        identity = task_identity(message["url"], page_url=page_url, video_id=video_id)
+        if identity is None:
+            raise ValueError("Media URL cannot be identified")
+        identity_hash = identity["contentKey"] or identity["mediaKey"]
+        short_hash = identity_hash[:8]
+        output_name = f"{Path(output_name).stem[:142]}-{short_hash}.mp4"
         with self.lock:
             if task_id in self.jobs:
                 raise ValueError("This task is already running")
@@ -142,10 +152,12 @@ class TaskService:
                 raise ValueError(
                     f"该资源已存在下载任务（{duplicate['outputName']}，状态 {duplicate['status']}），已跳过重复下载"
                 )
+            if next(self.output_dir.glob(f"*-{short_hash}.mp4"), None) is not None:
+                raise ValueError("该资源的同 hash 文件已存在，已跳过重复下载")
             record = self.store.create(
                 task_id,
                 message["url"],
-                message["outputName"],
+                output_name,
                 message["mediaType"],
                 use_cookies=message["useCookies"],
                 page_url=page_url,
@@ -378,8 +390,10 @@ class TaskService:
             if task["status"] in {"downloading", "finalizing"}:
                 raise ValueError("Stop the task before deleting it")
             task_directory = self._task_directory(task)
-            if task_directory.exists():
-                shutil.rmtree(task_directory)
+            output_stem = Path(task["outputName"]).stem
+            for artifact in task_directory.glob(f"{output_stem}.*"):
+                if artifact.is_file() or artifact.is_symlink():
+                    artifact.unlink()
             self.store.delete(task_id)
             self._delete_cookie_file(self.secrets_dir / f"{task_id}.cookies")
             return {"taskId": task_id, "status": "deleted"}
@@ -418,9 +432,7 @@ class TaskService:
         return {"taskId": task_id, "status": "opened"}
 
     def _task_directory(self, task):
-        # A settings change only affects new tasks. Existing partials and
-        # completed files must still be opened/resumed/deleted in their folder.
-        return Path(task.get("outputDirectory") or self.output_dir) / task["taskId"]
+        return Path(task.get("outputDirectory") or self.output_dir)
 
     def _terminate_tree(self, process):
         if process.poll() is not None:

@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from host.media_identity import media_identity
 from host.task_service import TaskService
 
 
@@ -23,17 +24,21 @@ class TaskServiceCookieTests(unittest.TestCase):
             output_root = Path(directory)/'output'
             service = TaskService(lambda message: None, root=Path(directory)/'state', output_root=output_root, protector=TestProtector())
             service.store.create('old-task', 'https://media.example/a.mp4', 'a.mp4', 'mp4', output_directory=output_root)
-            folder = output_root/'old-task'
-            folder.mkdir()
-            (folder/'a.mp4.part').write_bytes(b'partial')
+            output_root.mkdir(exist_ok=True)
+            partial_file = output_root/'a.mp4.part'
+            other_file = output_root/'other.mp4'
+            partial_file.write_bytes(b'partial')
+            other_file.write_bytes(b'keep')
             service.set_download_directory(str(Path(directory)/'new-output'))
             task = service.store.get('old-task')
-            self.assertEqual(service._task_directory(task), folder)
+            self.assertEqual(service._task_directory(task), output_root)
             with patch('host.task_service.os.startfile', create=True) as startfile:
                 service.open_directory('old-task')
-            startfile.assert_called_once_with(str(folder))
+            startfile.assert_called_once_with(str(output_root))
             service.action('old-task', 'delete')
-            self.assertFalse(folder.exists())
+            self.assertFalse(partial_file.exists())
+            self.assertTrue(other_file.is_file())
+            self.assertTrue(output_root.is_dir())
 
     def test_monitor_parses_and_emits_live_downloader_output(self):
         updates = []
@@ -292,6 +297,71 @@ class TaskServiceCookieTests(unittest.TestCase):
             self.assertEqual(found["outputName"], "video.mp4")
             self.assertEqual(missing, {"duplicate": False})
 
+    def test_start_uses_a_hashed_filename_in_the_shared_download_directory(self):
+        commands = []
+
+        def start_process(command, **kwargs):
+            commands.append(command)
+            return FakeProcess()
+
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory) / "output"
+            service = TaskService(
+                send_update=lambda message: None,
+                root=Path(directory) / "state",
+                output_root=output_root,
+                executable="yt-dlp.exe",
+                popen=start_process,
+                protector=TestProtector(),
+            )
+            with patch.object(service, "_terminate_tree", side_effect=lambda process: process.stopped.set()):
+                started = service.start({
+                    "taskId": "task-flat",
+                    "url": "https://media.example/video.m3u8",
+                    "outputName": "video.mp4",
+                    "mediaType": "hls",
+                    "useCookies": False,
+                })
+                self.assertRegex(started["outputName"], r"^video-[0-9a-f]{8}\.mp4$")
+                self.assertEqual(service._task_directory(service.store.get("task-flat")), output_root)
+                output_template = commands[0][commands[0].index("--output") + 1]
+                self.assertEqual(output_template, str(output_root / started["outputName"].replace(".mp4", ".%(ext)s")))
+                with patch("host.task_service.os.startfile", create=True) as startfile:
+                    service.open_directory("task-flat")
+                startfile.assert_called_once_with(str(output_root))
+                service.close()
+
+    def test_start_rejects_an_existing_file_with_the_same_media_hash(self):
+        processes = []
+        media_url = "https://media.example/video.m3u8"
+        short_hash = media_identity(media_url)["mediaKey"][:8]
+
+        def start_process(*args, **kwargs):
+            processes.append(FakeProcess())
+            return processes[-1]
+
+        with tempfile.TemporaryDirectory() as directory:
+            output_root = Path(directory) / "output"
+            output_root.mkdir()
+            (output_root / f"previous-{short_hash}.mp4").write_bytes(b"completed")
+            service = TaskService(
+                send_update=lambda message: None,
+                root=Path(directory) / "state",
+                output_root=output_root,
+                executable="yt-dlp.exe",
+                popen=start_process,
+                protector=TestProtector(),
+            )
+            with self.assertRaises(ValueError):
+                service.start({
+                    "taskId": "task-existing-file",
+                    "url": media_url,
+                    "outputName": "video.mp4",
+                    "mediaType": "hls",
+                    "useCookies": False,
+                })
+            self.assertEqual(processes, [])
+
     def test_start_allows_retrying_a_cancelled_task(self):
         processes = []
 
@@ -341,8 +411,8 @@ class TaskServiceCookieTests(unittest.TestCase):
                 protector=TestProtector(),
             )
             service.store.create("task-open", "https://media.example/video.mp4", "video.mp4", "mp4")
-            task_directory = output_root / "task-open"
-            task_directory.mkdir()
+            task_directory = output_root
+            task_directory.mkdir(exist_ok=True)
 
             with patch("host.task_service.os.startfile", create=True) as startfile:
                 result = service.open_directory("task-open")
@@ -379,7 +449,8 @@ class TaskServiceCookieTests(unittest.TestCase):
                     "mediaType": "hls",
                     "useCookies": False,
                 })
-                partial_file = Path(directory) / "output" / "task-3" / "video.mp4.part"
+                task_output_name = service.store.get("task-3")["outputName"]
+                partial_file = Path(directory) / "output" / f"{Path(task_output_name).stem}.mp4.part"
                 partial_file.write_bytes(b"completed fragment state")
 
                 paused = service.action("task-3", "pause")

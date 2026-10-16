@@ -45,6 +45,10 @@
       <button id="scanButton" class="text-button">扫描此页</button>
     </div>
     <div id="emptyState" class="empty-state">点击“扫描此页”查找视频资源</div>
+    <div id="selectionToolbar" class="selection-toolbar" hidden>
+      <label class="select-all"><input id="selectAll" type="checkbox" aria-controls="candidateList"><span>全选</span></label>
+      <span id="candidateCount"></span>
+    </div>
     <div id="candidateList" class="candidate-list" aria-live="polite"></div>
     <div class="download-options">
       <label class="consent-row"><input id="useCookies" type="checkbox"><span class="switch"></span><span>使用当前站点登录态</span></label>

@@ -23,6 +23,7 @@ const bridgeStatus = document.querySelector('#bridgeStatus');
 const notice = document.querySelector('#notice');
 let noticeTimer;
 let candidateScanGeneration = 0;
+let isSubmitting = false;
 let settings = { ...DEFAULT_SETTINGS };
 
 async function requestWorker(type, values = {}) {
@@ -114,8 +115,23 @@ function selectedCandidates() {
 
 function updateSelection() {
   const count = selectedCandidates().length;
+  const total = candidates.size;
+  const selectAll = document.querySelector('#selectAll');
+  selectAll.checked = total > 0 && count === total;
+  selectAll.indeterminate = count > 0 && count < total;
+  selectAll.disabled = total === 0;
+  document.querySelector('#selectionToolbar').hidden = total === 0;
+  document.querySelector('#candidateCount').textContent = `共 ${total} 项`;
   document.querySelector('#selectionCount').textContent = count ? `已选择 ${count} 项` : '未选择资源';
-  document.querySelector('#downloadButton').disabled = count === 0;
+  document.querySelector('#downloadButton').disabled = isSubmitting || count === 0;
+}
+
+function toggleSelectAll() {
+  const checked = document.querySelector('#selectAll').checked;
+  for (const checkbox of candidateList.querySelectorAll('input[type="checkbox"]')) {
+    checkbox.checked = checked;
+  }
+  updateSelection();
 }
 
 function renderCandidates(foundCandidates, pageUrl) {
@@ -306,11 +322,12 @@ async function scan() {
 }
 
 async function downloadSelected() {
+  if (isSubmitting) return;
   const selected = selectedCandidates();
   if (!selected.length) return;
   const useCookies = document.querySelector('#useCookies').checked;
-  const button = document.querySelector('#downloadButton');
-  button.disabled = true;
+  isSubmitting = true;
+  updateSelection();
   try {
     const authorizedCookies = useCookies ? await authorizeCookies(selected) : selected.map((candidate) => ({ candidate, cookies: [] }));
     let started = 0;
@@ -373,7 +390,8 @@ async function downloadSelected() {
   } catch (error) {
     showNotice(error.message);
   } finally {
-    button.disabled = selectedCandidates().length === 0;
+    isSubmitting = false;
+    updateSelection();
   }
 }
 
@@ -503,6 +521,7 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 document.querySelector('#scanButton').addEventListener('click', scan);
+document.querySelector('#selectAll').addEventListener('change', toggleSelectAll);
 document.querySelector('#downloadButton').addEventListener('click', downloadSelected);
 document.querySelector('#refreshTasks').addEventListener('click', refreshTasks);
 document.querySelector('#refreshTasks2').addEventListener('click', refreshTasks);

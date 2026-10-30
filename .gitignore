@@ -24,6 +24,8 @@ secrets/
 
 # Vendor binaries are reviewed inputs, not source
 vendor/*.exe
+vendor/*.7z
+vendor/*.zip
 vendor/*.tar.gz
 vendor/*.tar.xz
 

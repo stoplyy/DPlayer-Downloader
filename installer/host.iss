@@ -5,8 +5,10 @@
 AppId={{7E7AA473-593E-4D75-97A7-4E13661AE8AB}
 #ifndef DevelopmentBuild
 AppName={#ProductName} Host
+#ifndef UnsignedBuild
 SignTool=frame
 SignedUninstaller=yes
+#endif
 #else
 AppName={#ProductName} Host (DEVELOPMENT - DO NOT DISTRIBUTE)
 #endif
@@ -47,7 +49,9 @@ Source: "{tmp}\{#HostName}.json"; DestDir: "{app}"; Flags: external ignoreversio
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Edge\NativeMessagingHosts\{#HostName}"; ValueType: string; ValueData: "{app}\{#HostName}.json"; Flags: uninsdeletekey
+#if ChromeId != ""
 Root: HKCU; Subkey: "Software\Google\Chrome\NativeMessagingHosts\{#HostName}"; ValueType: string; ValueData: "{app}\{#HostName}.json"; Flags: uninsdeletekey
+#endif
 
 [Run]
 Filename: "{#ReleaseUrl}"; Description: "Open help, then return to the extension and click Retry connection"; Flags: shellexec postinstall skipifsilent unchecked
@@ -135,7 +139,11 @@ begin
   Result := StopInstalledHosts();
   if Result <> '' then Exit;
   Manifest := '{"name":"{#HostName}","description":"Frame Video Downloader Host","type":"stdio","path":' +
-    JsonString(ExpandConstant('{app}\native-host.exe')) + ',"allowed_origins":["chrome-extension://{#EdgeId}/","chrome-extension://{#ChromeId}/"]}';
+    JsonString(ExpandConstant('{app}\native-host.exe')) + ',"allowed_origins":[' + JsonString('chrome-extension://{#EdgeId}/');
+#if ChromeId != ""
+  Manifest := Manifest + ',' + JsonString('chrome-extension://{#ChromeId}/');
+#endif
+  Manifest := Manifest + ']}';
   { JSON is ASCII with Unicode escapes, therefore also valid BOM-free UTF-8. }
   if not SaveStringToFile(ExpandConstant('{tmp}\{#HostName}.json'), Manifest, False) then
     Result := 'Unable to prepare Native Messaging registration. No registration was changed.';
@@ -153,7 +161,7 @@ procedure InitializeWizard();
 begin
   WizardForm.WelcomeLabel2.Caption :=
     'Installs the local download service, yt-dlp and FFmpeg/ffprobe for this Windows user.' + #13#10#13#10 +
-    'Registers Native Messaging for the official Edge and Chrome extensions. Install browser extensions separately from their stores.' + #13#10#13#10 +
+    'Registers Native Messaging for the confirmed store extension. Install the browser extension separately from its official store.' + #13#10#13#10 +
     'Updates and uninstall preserve downloads, task history and settings. No administrator permission is requested.';
 end;
 

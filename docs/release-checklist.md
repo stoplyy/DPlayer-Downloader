@@ -2,11 +2,11 @@
 
 ## 已确定的发布形式
 
-Edge Add-ons 与 Chrome Web Store 各一个 MV3 ZIP，共用 `extensions/edge` 源码；一期完整下载仅支持 Windows 10/11 x64 + Edge/Chrome 120+，并需独立 Inno Setup Host 安装器，当前用户安装，无需 Python/管理员。macOS、Linux、ChromeOS 上扩展如可安装，也仅能扫描、显示可用预览和选择资源，不能下载、探测大小或管理本机任务；Windows ARM64 与 32 位 Windows 不支持。商店负责扩展更新，用户主动运行安装器更新 Host。不是一个 ZIP 加载未打包扩展的正式流程。
+Edge Add-ons 与 Chrome Web Store 可各有一个 MV3 ZIP，共用 `extensions/edge` 源码。当前 Edge 首发版完整下载仅支持 Windows 10/11 x64 + Edge 120+；Host 只注册已确认的商店 ID。Chrome Web Store ID 确认并发布后再加入 Host 注册。Host 使用独立 Inno Setup 安装器，当前用户安装，无需 Python/管理员。macOS、Linux、ChromeOS 上扩展如可安装，也仅能扫描、显示可用预览和选择资源，不能下载、探测大小或管理本机任务；Windows ARM64 与 32 位 Windows 不支持。商店负责扩展更新，用户主动运行安装器更新 Host。不是一个 ZIP 加载未打包扩展的正式流程。
 
 ## 维护者在发布时填写
 
-编辑 `release/config.json`：两个商店确认的 `edgeExtensionId` / `chromeExtensionId`（32 个 a-p 字符），并记录各商店条目 ID 供后台管理。Edge/Chrome 正式 ZIP 分别只要求对应商店确认的扩展 ID；`storeIdsConfirmed` 表示两个商店 ID 均已确认，Host 安装器发布前必须为 true。另需填写 `publisher` 和 `signingCertificateThumbprint`。发布者必须与签名证书 SimpleName 一致；证书/私钥留在当前用户证书库，不放仓库。分别管理扩展和 Host 版本及最低兼容版本。
+编辑 `release/config.json`：填写 Edge 商店确认的 `edgeExtensionId`（32 个 a-p 字符）和条目 ID。当前 Host 仅注册 Edge；Chrome ID 留空时不会写入 Chrome 注册表或 Native Messaging allowlist。Chrome 发布后填写 ID，并在 `storeIdsConfirmed` 确认两个商店 ID 均已核实。另需填写 `publisher` 和 `signingCertificateThumbprint`。发布者必须与签名证书 SimpleName 一致；证书/私钥留在当前用户证书库，不放仓库。分别管理扩展和 Host 版本及最低兼容版本。
 
 先在商店后台创建草稿获得 ID。商店 ZIP 不依赖 Host 签名证书；Host 安装器同时需要两个 ID。若商店需要先上传包才分配 ID，可上传开发 ZIP 到**未发布的草稿**取得 ID，然后回填配置、生成正式 ZIP 替换草稿；绝不能公开 DEVELOPMENT 包。
 
@@ -42,7 +42,7 @@ pwsh -File installer/build.ps1 -Iscc 'C:\path\ISCC.exe' -SignTool 'C:\path\signt
 | 无 Host | 两浏览器均可扫描/勾选/修改自动勾选站点；下载引导清楚，Cookie 不提前读取 |
 | 非 Windows 环境 | 商店资料明确一期仅 Windows 提供下载；若扩展可安装，扫描可用但下载、大小探测和本机任务管理不可用，界面不得暗示可安装非 Windows Host |
 | 安装 | 标准 Windows 用户、无 Python、含中文/空格用户目录；无 UAC 提权；两个 HKCU key 正确 |
-| 身份 | allowed_origins 恰好两个正式 ID，开发/陌生 ID 被拒绝；不能用开发公钥推定 |
+| 身份 | allowed_origins 仅包含已确认的正式商店 ID；开发/陌生 ID 被拒绝，不能用开发公钥推定 |
 | 连接 | ping 返回 hostVersion / protocolVersion；旧版、超时、拒绝访问有恢复文案 |
 | 修复/升级 | 活动下载阻止覆盖；空闲 Host 停止后更新；中断任务/视频/设置保留；禁止降级 |
 | 取消/失败 | 注册与文件回滚验证；磁盘不足、文件锁、WMI 不可用可重试 |

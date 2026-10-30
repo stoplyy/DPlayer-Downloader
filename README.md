@@ -2,12 +2,13 @@
 
 **Languages:** English (default) | [简体中文](README.zh-CN.md)
 
-Scan DPlayer-style media from the active browser tab. **Phase 1 downloading is
-supported only on Windows 10/11 x64 with Microsoft Edge or Google Chrome 120+**;
+Scan DPlayer-style media from the active browser tab. **The Edge launch supports
+downloading only on Windows 10/11 x64 with Microsoft Edge 120+**;
 the browser extension alone is not a cross-platform downloader.
 
-The project ships Edge and Chrome store extensions, a local Native Messaging host, and a
-download engine built on `yt-dlp` + `ffmpeg`. Downloads run locally, HLS tasks
+The project ships an Edge store extension, a local Native Messaging host, and a
+download engine built on `yt-dlp` + `ffmpeg`. The first Host installer registers
+only the confirmed Edge store ID. Downloads run locally, HLS tasks
 resume from completed fragments, and every task is persisted so it can be
 resumed after a browser restart.
 
@@ -82,10 +83,9 @@ external media URLs.
 
 ## Install and remove
 
-The supported Phase 1 download distribution is **Microsoft Edge Add-ons / Chrome
-Web Store + a separate signed Windows Host installer**. Complete downloading
-requires Windows 10/11 x64 and Edge or Chrome 120+. Store listings are pending;
-no store ID or signing identity is invented in this repository.
+The Edge launch distribution is **Microsoft Edge Add-ons plus a separate signed
+Windows Host installer**. Complete downloading requires Windows 10/11 x64 and
+Edge 120+. Chrome Web Store support will be added after its store ID is confirmed.
 
 1. Install [Frame Video Downloader from Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/0RDCKF2Z9NKQ).
    Scanning and candidate selection work without the Host.
@@ -124,6 +124,8 @@ python -m tools.build_release extension --browser chrome
 # Formal store packages: requires confirmed store IDs and public URLs.
 python -m tools.build_release extension --browser edge --release
 python -m tools.build_release extension --browser chrome --release
+# Host installer without a code-signing certificate (Windows may warn about the unknown publisher).
+pwsh -File installer/build.ps1 -Iscc 'C:\path\ISCC.exe' -Unsigned
 # Signed Host installer: also requires reviewed vendor inputs and signing tools.
 pwsh -File installer/build.ps1 -Iscc 'C:\path\ISCC.exe' -SignTool 'C:\path\signtool.exe'
 ```

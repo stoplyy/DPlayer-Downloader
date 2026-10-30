@@ -31,7 +31,7 @@ def sha256(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def config_errors(config, target, release=True):
+def config_errors(config, target, release=True, allow_unsigned=False):
     errors = []
     if not config.get('productName') or any(c in config['productName'] for c in '\r\n"{}'):
         errors.append('Invalid productName')
@@ -56,17 +56,20 @@ def config_errors(config, target, release=True):
     browsers = ("edge", "chrome") if target == "host" else (target,)
     for browser in browsers:
         value = config.get(f"{browser}ExtensionId", "")
+        if target == "host" and browser == "chrome" and not value:
+            continue  # The Host registers only stores with a confirmed public ID.
         if not re.fullmatch(r"[a-p]{32}", value) or value == DEV_ID:
             errors.append(f"Set the confirmed {browser}ExtensionId (not the development ID)")
-    if target == "host" and config.get("storeIdsConfirmed") is not True:
-        errors.append("Confirm the IDs assigned by both stores: storeIdsConfirmed")
+    if target == "host" and config.get("chromeExtensionId") and config.get("storeIdsConfirmed") is not True:
+        errors.append("Confirm both store IDs before registering Chrome: storeIdsConfirmed")
     if config.get("publicPagesVerified") is not True:
         errors.append("Publish and verify the release/support/privacy URLs: publicPagesVerified")
     if target == "host":
-        if not re.fullmatch(r"[A-Fa-f0-9]{40}", config.get("signingCertificateThumbprint", "")):
-            errors.append("Set signingCertificateThumbprint for a trusted code-signing certificate")
-        if not config.get("publisher") or any(c in config["publisher"] for c in '\r\n"{}'):
-            errors.append("Set publisher to the certificate publisher name")
+        if not allow_unsigned:
+            if not re.fullmatch(r"[A-Fa-f0-9]{40}", config.get("signingCertificateThumbprint", "")):
+                errors.append("Set signingCertificateThumbprint for a trusted code-signing certificate")
+            if not config.get("publisher") or any(c in config["publisher"] for c in '\r\n"{}'):
+                errors.append("Set publisher to the certificate publisher name")
         review = config.get('installerCompilerReview', {})
         if review.get('approved') is not True or not review.get('reviewedBy') or not review.get('reviewedAt'):
             errors.append('Review and record the Inno Setup 6 distribution license for this project')
@@ -207,13 +210,14 @@ def main():
     parser.add_argument("--browser", choices=("edge", "chrome"), default="edge")
     parser.add_argument("--target", choices=("edge", "chrome", "host"), default="host")
     parser.add_argument("--release", action="store_true")
+    parser.add_argument("--allow-unsigned", action="store_true", help="Allow an unsigned Host build; redistribution checks still apply")
     args = parser.parse_args()
     try:
         if args.command == "extension":
             print(build_extension(args.browser, args.release))
         else:
             config = check_generated()
-            errors = config_errors(config, args.target)
+            errors = config_errors(config, args.target, allow_unsigned=args.allow_unsigned)
             if args.target == "host":
                 errors += dependency_errors()
             if errors:

@@ -1,8 +1,8 @@
 {
   "ytDlp": {
     "version": "2026.08.19",
-    "sha256": "BECE045AEEC8CBDB6F0D543D19AEEA1F5952BD8153F3D5B1175B0F6A78513760",
-    "sourceArchiveSha256": "",
+    "sha256": "66674953FE251B89F4D08C5F0E35E0728679BD67AB3D7D05C0562AF101DD3E7A",
+    "sourceArchiveSha256": "072AAD4F2A7604E92155F61A275A4752DC64046C8F6D90DF3710525D94CD37C1",
     "licenseFile": "licenses/yt-dlp.txt"
   },
   "ffmpeg": {
@@ -10,13 +10,34 @@
     "sha256": "AD8F211BC894755E0061C55AB280AE00E8D3D4F15A8CC4372B24CFA247B5942E",
     "ffprobeSha256": "9DF3B0B5275E830961DF6D94E1F7A71121A7ABD5FF708E9FEC8A0B6084A55015",
     "sourceCommit": "38b88335f9",
-    "sourceArchiveSha256": "",
+    "sourceArchiveSha256": "128f11bb1aeda62de41b837681131c247a8feaa1e2841f11e7973d5c84ea6f05",
     "licenseFile": "licenses/ffmpeg-GPL-3.0.txt"
   },
   "redistributionReview": {
     "approved": false,
     "reviewedBy": "",
     "reviewedAt": "",
-    "materials": []
+    "materials": [
+      {
+        "path": "licenses/yt-dlp.txt",
+        "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
+      },
+      {
+        "path": "licenses/ffmpeg-GPL-3.0.txt",
+        "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+      },
+      {
+        "path": "licenses/ffmpeg-BUILD-INFO.txt",
+        "sha256": "09124e0f7c3d43d9054c62726a176371e8b99960732f51ddd68c6ae68982f434"
+      },
+      {
+        "path": "licenses/Python.txt",
+        "sha256": "e502c6b880ff58d614901495a9009c136539cd0b1e2a2abb8fc00b934c203419"
+      },
+      {
+        "path": "licenses/PyInstaller.txt",
+        "sha256": "dcf75fdb959db1e3b41c0f8505069d2ece781b5ec6b3d0a4d30975cfc6580245"
+      }
+    ]
   }
 }

@@ -9,7 +9,7 @@ test('formats exact and estimated byte values distinctly', () => {
 });
 
 test('reports unavailable and failed probes explicitly', () => {
-  assert.equal(formatSizeResult({ status: 'unavailable' }), '无法估算');
-  assert.equal(formatSizeResult({ status: 'failed' }), '探测失败');
-  assert.equal(formatSizeResult({ status: 'exact', sizeBytes: 0 }), '探测失败');
+  assert.equal(formatSizeResult({ status: 'unavailable' }), '大小未知');
+  assert.equal(formatSizeResult({ status: 'failed' }), '暂时无法获取大小');
+  assert.equal(formatSizeResult({ status: 'exact', sizeBytes: 0 }), '暂时无法获取大小');
 });

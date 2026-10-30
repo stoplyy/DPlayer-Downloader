@@ -20,14 +20,15 @@ class ReleaseTests(unittest.TestCase):
             config["edgeExtensionId"] = value
             self.assertTrue(any("edgeExtensionId" in error for error in config_errors(config, "edge")))
 
-    def test_release_needs_both_browser_ids_and_signing_identity(self):
+    def test_host_needs_confirmed_edge_id_and_signing_identity(self):
         config = read_json(ROOT / "release/config.json")
         config.update(edgeExtensionId="a" * 32, chromeExtensionId="b" * 32, storeIdsConfirmed=True,
                       publicPagesVerified=True, publisher="Test Publisher", signingCertificateThumbprint="C" * 40,
                       installerCompilerReview={"approved": True, "reviewedBy": "Test Reviewer", "reviewedAt": "2026-10-30"})
         self.assertEqual(config_errors(config, "host"), [])
         config["chromeExtensionId"] = ""
-        self.assertTrue(any("chromeExtensionId" in error for error in config_errors(config, "host")))
+        config["storeIdsConfirmed"] = False
+        self.assertEqual(config_errors(config, "host"), [])
 
     def test_urls_cannot_carry_executable_schemes_or_credentials(self):
         config = read_json(ROOT / "release/config.json")

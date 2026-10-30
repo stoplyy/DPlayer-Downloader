@@ -14,7 +14,7 @@
   "installerCompilerReview": {
     "product": "Inno Setup 6.7.3",
     "approved": false,
-    "licenseReference": "https://jrsoftware.org/isdl.php",
+    "licenseReference": "https://github.com/jrsoftware/issrc/blob/is-6_7_3/license.txt",
     "reviewedBy": "",
     "reviewedAt": ""
   },

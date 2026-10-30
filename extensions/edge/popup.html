@@ -1,75 +1,75 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Frame 下载器</title>
+  <title data-i18n="popupTitle">Frame Video Downloader</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <header class="masthead">
     <div class="brand"><span class="brand-mark">F</span><span>FRAME <small>MEDIA TOOL</small></span></div>
     <div class="masthead-actions">
-      <button id="settingsButton" class="icon-button" title="设置" aria-label="设置">⚙</button>
-      <button id="refreshTasks" class="icon-button" title="刷新任务" aria-label="刷新任务">↻</button>
+      <button id="settingsButton" class="icon-button" data-i18n-title="settings" data-i18n-aria-label="settings">⚙</button>
+      <button id="refreshTasks" class="icon-button" data-i18n-title="refreshTasks" data-i18n-aria-label="refreshTasks">↻</button>
     </div>
   </header>
   <section id="settingsPanel" class="settings-panel" hidden>
-    <div class="section-heading"><h2>设置</h2><button id="closeSettings" class="text-button">关闭</button></div>
-    <label class="settings-label" for="downloadDirectory">下载保存路径</label>
+    <div class="section-heading"><h2 data-i18n="settings">设置</h2><button id="closeSettings" class="text-button" data-i18n="close">关闭</button></div>
+    <label class="settings-label" for="downloadDirectory" data-i18n="downloadDirectory">下载保存路径</label>
     <div class="settings-row">
-      <input id="downloadDirectory" class="settings-input" type="text" placeholder="留空恢复默认目录" spellcheck="false">
-      <button id="saveDownloadDirectory" class="text-button">保存</button>
+      <input id="downloadDirectory" class="settings-input" type="text" data-i18n-placeholder="restoreDefaultDirectory" placeholder="留空恢复默认目录" spellcheck="false">
+      <button id="saveDownloadDirectory" class="text-button" data-i18n="save">保存</button>
     </div>
     <div id="defaultDirectory" class="option-note"></div>
-    <label class="settings-label" for="allowedSiteInput">自动勾选资源的站点</label>
+    <label class="settings-label" for="allowedSiteInput" data-i18n="autoSelectSites">自动勾选资源的站点</label>
     <div class="settings-row">
-      <input id="allowedSiteInput" class="settings-input" type="text" placeholder="例如 media.example.com" spellcheck="false">
-      <button id="addAllowedSite" class="text-button">添加</button>
+      <input id="allowedSiteInput" class="settings-input" type="text" data-i18n-placeholder="siteExample" placeholder="例如 media.example.com" spellcheck="false">
+      <button id="addAllowedSite" class="text-button" data-i18n="add">添加</button>
     </div>
     <div id="allowedSiteList" class="allowed-site-list"></div>
-    <div class="option-note">匹配该域名及其子域名的媒体资源，扫描时自动勾选。</div>
+    <div class="option-note" data-i18n="autoSiteNote">匹配该域名及其子域名的媒体资源，扫描时自动勾选。</div>
   </section>
   <section class="page-info">
-    <div class="eyebrow">当前标签页</div>
-    <div id="pageTitle" class="page-title">等待扫描</div>
+    <div class="eyebrow" data-i18n="activeTab">当前标签页</div>
+    <div id="pageTitle" class="page-title" data-i18n="waitingScan">等待扫描</div>
     <div class="bridge-row">
-      <div id="bridgeStatus" class="bridge-status"><span class="status-dot"></span><span id="bridgeStatusText">正在连接本机下载器</span></div>
-      <button id="bridgeAction" class="bridge-button" type="button">重试连接</button>
+      <div id="bridgeStatus" class="bridge-status"><span class="status-dot"></span><span id="bridgeStatusText" data-i18n="connectingHost">正在连接本机下载器</span></div>
+      <button id="bridgeAction" class="bridge-button" type="button" data-i18n="retryConnection">重试连接</button>
     </div>
     <div id="bridgeHint" class="bridge-hint" hidden></div>
   </section>
   <main>
     <div class="section-heading">
-      <h1>视频资源</h1>
-      <button id="scanButton" class="text-button">扫描此页</button>
+      <h1 data-i18n="mediaResources">视频资源</h1>
+      <button id="scanButton" class="text-button" data-i18n="scanPage">扫描此页</button>
     </div>
-    <aside class="disclosure">点击扫描后才读取当前网页。预览、大小检查和下载会访问媒体服务器；预览不使用网站登录状态。部分格式、受保护或不允许匿名跨域加载的资源无法预览。<a id="privacyLink" target="_blank" rel="noopener noreferrer">隐私说明</a></aside>
+    <aside class="disclosure"><span data-i18n="privacyDisclosure">点击扫描后才读取当前网页。预览、大小检查和下载会访问媒体服务器；预览不使用网站登录状态。部分格式、受保护或不允许匿名跨域加载的资源无法预览。</span> <a id="privacyLink" data-i18n="privacyLink" target="_blank" rel="noopener noreferrer">隐私说明</a></aside>
     <section id="hostSetup" class="host-setup" aria-live="polite" hidden>
-      <h2 id="hostSetupTitle">下载功能需要本机组件</h2>
-      <p id="hostSetupDescription">扫描无需安装。下载需要 Windows 10/11 x64 本机组件（下载服务、yt-dlp、FFmpeg），不需要 Python。</p>
-      <ol id="hostSetupSteps"><li>前往 GitHub Releases 下载并运行 Windows x64 安装包，无需管理员权限。</li><li>安装完成后，回到这里点击“重试连接”。</li></ol>
-      <div class="setup-links"><a id="installHostLink" target="_blank" rel="noopener noreferrer">下载 Windows 本机组件（GitHub Releases）</a><a id="supportLink" target="_blank" rel="noopener noreferrer">帮助与反馈</a></div>
-      <p class="option-note">可从 Windows“已安装的应用”卸载组件，保留任务与视频；浏览器扩展需单独卸载。</p>
+      <h2 id="hostSetupTitle" data-i18n="hostNeeded">下载功能需要本机组件</h2>
+      <p id="hostSetupDescription" data-i18n="hostDescriptionWindows">扫描无需安装。下载需要 Windows 10/11 x64 本机组件（下载服务、yt-dlp、FFmpeg），不需要 Python。</p>
+      <ol id="hostSetupSteps"><li data-i18n="hostSetupStep1">前往 GitHub Releases 下载并运行 Windows x64 安装包，无需管理员权限。</li><li data-i18n="hostSetupStep2">安装完成后，回到这里点击“重试连接”。</li></ol>
+      <div class="setup-links"><a id="installHostLink" data-i18n="downloadHost" target="_blank" rel="noopener noreferrer">下载 Windows 本机组件（GitHub Releases）</a><a id="supportLink" data-i18n="helpFeedback" target="_blank" rel="noopener noreferrer">帮助与反馈</a></div>
+      <p class="option-note" data-i18n="uninstallNote">可从 Windows“已安装的应用”卸载组件，保留任务与视频；浏览器扩展需单独卸载。</p>
     </section>
-    <div id="emptyState" class="empty-state" role="status" aria-live="polite">点击“扫描此页”查找视频资源</div>
+    <div id="emptyState" class="empty-state" role="status" aria-live="polite" data-i18n="scanPrompt">点击“扫描此页”查找视频资源</div>
     <div id="selectionToolbar" class="selection-toolbar" hidden>
-      <label class="select-all"><input id="selectAll" type="checkbox" aria-controls="candidateList"><span>全选资源</span></label>
+      <label class="select-all"><input id="selectAll" type="checkbox" aria-controls="candidateList"><span data-i18n="selectAllResources">全选资源</span></label>
       <span id="candidateCount" role="status" aria-live="polite"></span>
     </div>
     <div id="candidateList" class="candidate-list"></div>
     <div class="download-options">
-      <label class="consent-row"><input id="useCookies" type="checkbox"><span class="switch"></span><span>使用所选网站的登录状态</span></label>
-      <div class="option-note">默认关闭。启用后会读取所选媒体网站的 Cookie，并按需请求访问权限。</div>
+      <label class="consent-row"><input id="useCookies" type="checkbox"><span class="switch"></span><span data-i18n="selectedSiteLogin">使用所选网站的登录状态</span></label>
+      <div class="option-note" data-i18n="cookieDisclosure">默认关闭。启用后会读取所选媒体网站的 Cookie，并按需请求访问权限。</div>
     </div>
     <div id="taskSection" class="task-section" hidden>
-      <div class="section-heading"><h2>下载任务</h2><button id="refreshTasks2" class="text-button">刷新任务</button></div>
+      <div class="section-heading"><h2 data-i18n="downloadTasks">下载任务</h2><button id="refreshTasks2" class="text-button" data-i18n="refreshTasks">刷新任务</button></div>
       <div id="taskList" class="task-list"></div>
     </div>
   </main>
   <footer class="footer">
-    <span id="selectionCount" role="status" aria-live="polite">尚未选择资源</span>
-    <button id="downloadButton" class="primary-button" disabled><span aria-hidden="true">↓</span>下载已选</button>
+    <span id="selectionCount" role="status" aria-live="polite" data-i18n="nothingSelected">尚未选择资源</span>
+    <button id="downloadButton" class="primary-button" disabled><span aria-hidden="true">↓</span><span data-i18n="downloadSelected">下载已选</span></button>
   </footer>
   <div id="notice" class="notice" role="status" hidden></div>
   <script src="popup.js" type="module"></script>

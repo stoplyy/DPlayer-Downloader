@@ -1,0 +1,54 @@
+name: Prepare GitHub release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to prepare, for example v0.2.1
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  draft-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check tag and release configuration
+        shell: pwsh
+        run: |
+          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' } else { '${{ github.ref_name }}' }
+          $config = Get-Content release/config.json -Raw | ConvertFrom-Json
+          if ($tag -ne "v$($config.extensionVersion)") { throw "Tag $tag does not match extensionVersion $($config.extensionVersion)" }
+          if ($config.publicPagesVerified -ne $true) { throw 'Public release, support, and privacy pages have not been verified.' }
+      - name: Build official Edge package
+        run: python -m tools.build_release extension --browser edge --release
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' } else { '${{ github.ref_name }}' }
+          $version = (Get-Content release/config.json -Raw | ConvertFrom-Json).extensionVersion
+          $zip = "dist/release/frame-video-downloader-edge-$version.zip"
+          $metadata = "dist/release/frame-video-downloader-edge-$version.json"
+          $existing = gh release view $tag --json isDraft,url 2>$null | ConvertFrom-Json
+          if ($LASTEXITCODE -eq 0) {
+            if (-not $existing.isDraft) { throw "Release $tag is already published; refusing to replace its assets." }
+            gh release upload $tag $zip $metadata --clobber
+          } else {
+            gh release create $tag $zip $metadata --draft --title "Frame Video Downloader $version" --notes-file docs/release-notes-template.md
+          }

@@ -1,6 +1,6 @@
 {
   "productName": "Frame Video Downloader",
-  "extensionVersion": "0.2.0",
+  "extensionVersion": "0.2.1",
   "hostVersion": "0.2.0",
   "minimumHostVersion": "0.2.0",
   "protocolVersion": 4,
@@ -18,7 +18,9 @@
     "reviewedBy": "",
     "reviewedAt": ""
   },
-  "edgeExtensionId": "",
+  "edgeExtensionId": "eiengekfcedlijhhlgaalfmoicmchfcm",
+  "edgeStoreId": "0RDCKF2Z9NKQ",
+  "edgeProductId": "78b482b0-c362-49c7-b60c-9dc9dd9c60f7",
   "chromeExtensionId": "",
   "storeIdsConfirmed": false,
   "releaseUrl": "https://github.com/stoplyy/DPlayer-Downloader/releases",

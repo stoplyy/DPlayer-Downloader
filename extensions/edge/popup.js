@@ -1,4 +1,5 @@
 import { authorizeCookies } from './cookie_authorization.mjs';
+import { t, localizeDocument } from './i18n.mjs';
 import { describeHealth, hostAvailability } from './bridge_status.mjs';
 import { RELEASE } from './release_config.mjs';
 import { findDuplicateTaskByIdentity, taskIdentity } from './media_identity.mjs';
@@ -14,6 +15,7 @@ import {
 } from './settings.mjs';
 
 const candidates = new Map();
+localizeDocument();
 const candidateSizeNodes = new Map();
 const tasks = new Map();
 const taskRows = new Map();
@@ -48,12 +50,12 @@ async function requestWorker(type, values = {}) {
   } catch (error) {
     // The service worker failed to load or was torn down mid-request. Report
     // the underlying reason so it is not mistaken for a downloader failure.
-    throw new Error('扩展后台暂时不可用，请关闭弹窗后重试，或在浏览器扩展管理页重新加载扩展');
+    throw new Error(t('backgroundUnavailable'));
   }
   if (!response) {
-    throw new Error('扩展后台无响应，请关闭弹窗后重试');
+    throw new Error(t('backgroundNoResponse'));
   }
-  if (!response.ok) throw new Error(response.error || '扩展后台请求失败');
+  if (!response.ok) throw new Error(localizeMessage(response.error || t('backgroundRequestFailed')));
   return response.result;
 }
 
@@ -66,21 +68,30 @@ function showNotice(message) {
 
 function localizeMessage(message) {
   const knownMessages = new Map([
-    ['Download failed; review the source and try again', '下载失败。请确认资源仍可访问，或重新扫描后再试。'],
-    ['yt-dlp executable is unavailable', '本机下载组件不完整，请重新安装或修复组件。'],
-    ['Unable to start the local download worker', '无法启动本机下载任务，请重试；若仍失败，请修复本机组件。'],
-    ['This task requires newly authorized cookies', '此任务需要重新授权网站登录状态后才能继续。'],
-    ['Task is not resumable', '此任务当前无法继续下载，请重新扫描并创建任务。'],
-    ['Size probe failed', '暂时无法获取资源大小。'],
-    ['Media URL cannot be identified', '无法识别此资源链接，请重新扫描页面后重试。'],
-    ['This task is already running', '此任务正在运行，请等待或刷新任务列表。'],
-    ['Only absolute HTTP(S) media URLs are allowed', '此资源地址暂不支持；请扫描可直接访问的 HTTP 或 HTTPS 视频链接。'],
-    ['Unsupported media type', '此资源格式暂不支持下载。'],
-    ['Destination resolves to a non-public IP address', '出于安全原因，不能访问本机或局域网媒体地址。'],
-    ['Download directory is not a directory', '所选保存路径不是文件夹，请换一个路径。'],
-    ['Download directory could not be created', '无法创建下载文件夹，请检查路径和磁盘权限。'],
+    ['Download failed; review the source and try again', 'errorDownloadFailed'],
+    ['yt-dlp executable is unavailable', 'errorHostToolsMissing'],
+    ['Unable to start the local download worker', 'errorWorkerStart'],
+    ['This task requires newly authorized cookies', 'errorCookieAuthorization'],
+    ['Task is not resumable', 'errorTaskNotResumable'],
+    ['Size probe failed', 'errorSizeProbe'],
+    ['Media URL cannot be identified', 'errorMediaUrl'],
+    ['This task is already running', 'errorTaskRunning'],
+    ['Only absolute HTTP(S) media URLs are allowed', 'errorHttpMediaOnly'],
+    ['Unsupported media type', 'errorMediaType'],
+    ['Destination resolves to a non-public IP address', 'errorPrivateAddress'],
+    ['Download directory is not a directory', 'errorDownloadFolderType'],
+    ['Download directory could not be created', 'errorDownloadFolderCreate'],
+    ['本机下载器返回错误', 'workerError'],
+    ['本机桥接连接已断开', 'workerDisconnected'],
+    ['本机下载服务已停止', 'workerStopped'],
+    ['本机下载组件已停止，请点击“重试连接”', 'workerStopped'],
+    ['此页面不允许扫描，请切换到普通 HTTP(S) 网页。', 'workerUnsupportedPage'],
+    ['操作失败', 'workerError'],
   ]);
-  return knownMessages.get(message) || message;
+  if (/^本机下载器响应超时（(.+)）$/.test(message)) return t('workerTimeout', [message.match(/^本机下载器响应超时（(.+)）$/)[1]]);
+  if (/^未获得 (.+) 的登录态权限，任务未启动。$/.test(message)) return t('cookiePermissionDenied', [message.match(/^未获得 (.+) 的登录态权限，任务未启动。$/)[1]]);
+  if (/^(.+) 的权限未生效，任务未启动。$/.test(message)) return t('cookiePermissionInactive', [message.match(/^(.+) 的权限未生效，任务未启动。$/)[1]]);
+  return knownMessages.has(message) ? t(knownMessages.get(message)) : message;
 }
 
 // Renders the explicit bridge state produced by the service worker, including
@@ -97,32 +108,49 @@ function renderBridgeState(state, connected) {
   setup.hidden = isConnected || availability === 'checking';
   const windows = isWindowsPlatform();
   document.querySelector('#hostSetupTitle').textContent = !windows
-    ? '当前系统暂不支持下载'
-    : availability === 'incompatible' ? '需要更新本机下载组件' : '下载需要本机组件';
+    ? t('systemNoDownloads')
+    : availability === 'incompatible' ? t('updateHost') : t('downloadNeedsHostTitle');
   document.querySelector('#hostSetupDescription').textContent = windows
-    ? '扫描无需安装。下载需要 Windows 10/11 x64 本机组件（下载服务、yt-dlp、FFmpeg），不需要 Python。'
-    : '扫描和选择资源仍可使用。本机下载组件目前只支持 Windows 10/11 x64，当前系统无法下载或管理本机任务。';
+    ? t('hostDescriptionWindows') : t('hostDescriptionUnsupported');
   document.querySelector('#hostSetupSteps').hidden = !windows;
   document.querySelector('#installHostLink').hidden = !windows;
 
   bridgeStatus.classList.toggle('connected', isConnected);
   bridgeStatus.classList.toggle('error', !isConnected && status === 'disconnected');
-  text.textContent = state?.message || (isConnected ? '本机下载服务已连接' : '本机下载服务未启动');
+  const bridgeMessages = {
+    'protocol-mismatch': ['bridgeProtocolMismatch', [state?.hostProtocolVersion ?? 'unknown', RELEASE.protocolVersion]],
+    'host-version-mismatch': ['bridgeHostVersionMismatch', [RELEASE.minimumHostVersion]],
+    'not-installed': ['bridgeNotInstalled'],
+    'access-denied': ['bridgeAccessDenied'],
+    'host-exited': ['bridgeHostExited'],
+    unavailable: ['bridgeUnavailable'],
+    'host-in-use': ['bridgeHostInUse'],
+  };
+  const bridgeActions = {
+    'protocol-mismatch': 'bridgeProtocolMismatchAction',
+    'not-installed': 'bridgeNotInstalledAction',
+    'access-denied': 'bridgeAccessDeniedAction',
+    'host-exited': 'bridgeHostExitedAction',
+    unavailable: 'bridgeUnavailableAction',
+    'host-in-use': 'bridgeHostInUseAction',
+  };
+  const message = bridgeMessages[state?.code];
+  text.textContent = isConnected ? t('hostConnected') : message ? t(message[0], message[1] || []) : t('hostNotStarted');
 
   if (status === 'connecting') {
-    actionButton.textContent = '启动中…';
+    actionButton.textContent = t('startingHost');
     actionButton.disabled = true;
   } else if (isConnected) {
-    actionButton.textContent = '停止服务';
+    actionButton.textContent = t('stopService');
     actionButton.disabled = false;
   } else {
-    actionButton.textContent = '重试连接';
+    actionButton.textContent = t('retryConnection');
     actionButton.disabled = false;
   }
 
-  const action = !isConnected ? state?.action : '';
-  hint.textContent = action || '';
-  hint.hidden = !action;
+  const actionKey = !isConnected ? bridgeActions[state?.code] : '';
+  hint.textContent = actionKey ? t(actionKey) : '';
+  hint.hidden = !actionKey;
 }
 
 async function startOrStopBridge() {
@@ -133,7 +161,7 @@ async function startOrStopBridge() {
     const result = wasConnected ? await requestWorker('stopBridge') : await requestWorker('startBridge');
     renderBridgeState(result.state, result.connected);
     if (!wasConnected && result.state?.status === 'connected') {
-      showNotice('本机下载服务已启动');
+      showNotice(t('hostStartedNotice'));
       await refreshHostSettings();
       await refreshTasks();
     }
@@ -148,10 +176,14 @@ async function showDiagnostics() {
   if (!hostReady) { document.querySelector('#hostSetup').hidden = false; return; }
   try {
     const result = await requestWorker('health');
-    const lines = describeHealth(result.health).map(([label, value]) => `${label}：${value}`);
+    const healthLabels = ['healthYtDlp', 'healthFfmpeg', 'healthDownloadFolder', 'healthWritable'];
+    const lines = describeHealth(result.health).map(([label, value], index) => {
+      const translatedValue = value === '可用' ? t('available') : value === '缺失' ? t('missing') : value === '未知' ? t('unknown') : value === '是' ? t('yes') : value === '否' ? t('no') : value;
+      return `${t(healthLabels[index])}: ${translatedValue}`;
+    });
     showNotice(lines.join(' · '));
   } catch (error) {
-    showNotice(`诊断失败：${error.message}`);
+    showNotice(t('diagnosticsFailed', [error.message]));
   }
 }
 
@@ -169,8 +201,8 @@ function updateSelection() {
   selectAll.indeterminate = count > 0 && count < total;
   selectAll.disabled = total === 0;
   document.querySelector('#selectionToolbar').hidden = total === 0;
-  document.querySelector('#candidateCount').textContent = `找到 ${total} 项`;
-  document.querySelector('#selectionCount').textContent = count ? `已选 ${count} 项` : '尚未选择资源';
+  document.querySelector('#candidateCount').textContent = t('foundCount', [total]);
+  document.querySelector('#selectionCount').textContent = count ? t('selectedCount', [count]) : t('nothingSelected');
   document.querySelector('#downloadButton').disabled = isSubmitting || count === 0;
 }
 
@@ -192,9 +224,9 @@ function resourceLabel(candidate, index) {
       .replace(/[._-]+/g, ' ')
       .trim();
     if (filename && !/^(index|master|playlist|stream|video|manifest)$/i.test(filename)) return filename;
-    return `来自 ${url.hostname} 的视频`;
+    return t('videoFromHost', [url.hostname]);
   } catch {
-    return `视频资源 ${index + 1}`;
+    return t('videoResourceNumber', [index + 1]);
   }
 }
 
@@ -205,11 +237,11 @@ function resourceLocation(candidate) {
     try { path = decodeURIComponent(path); } catch { /* Keep the escaped path. */ }
     return `${url.hostname}${path}`;
   } catch {
-    return '媒体地址';
+    return t('mediaAddress');
   }
 }
 
-const resourceTypeLabels = { hls: 'HLS 视频流', mp4: 'MP4 视频', webm: 'WebM 视频' };
+const resourceTypeLabels = { hls: 'hlsVideo', mp4: 'mp4Video', webm: 'webmVideo' };
 
 function cancelCandidatePreviews() {
   previewObserver?.disconnect();
@@ -257,10 +289,10 @@ function isSafePreviewUrl(value) {
 function loadCandidatePreview({ candidate, preview, generation }) {
   return new Promise((resolve) => {
     if (generation !== candidateScanGeneration || !preview.isConnected) return resolve();
-    const finishWithFallback = (message = '首帧暂不可用') => {
+    const finishWithFallback = (messageKey = 'firstFrameUnavailable') => {
       if (generation === candidateScanGeneration && preview.isConnected) {
         preview.replaceChildren();
-        preview.textContent = message;
+        preview.textContent = t(messageKey);
         preview.classList.add('candidate-preview-empty');
       }
       resolve();
@@ -275,8 +307,8 @@ function loadCandidatePreview({ candidate, preview, generation }) {
       resolve();
     };
     const loadVideoFrame = () => {
-      if (!isSafePreviewUrl(candidate.url)) return finishWithFallback('本地网络资源不加载预览');
-      if (candidate.type === 'hls') return finishWithFallback('此格式暂不支持预览');
+      if (!isSafePreviewUrl(candidate.url)) return finishWithFallback('privatePreviewBlocked');
+      if (candidate.type === 'hls') return finishWithFallback('formatPreviewUnsupported');
       const video = document.createElement('video');
       previewMediaElements.add(video);
       video.muted = true;
@@ -296,7 +328,7 @@ function loadCandidatePreview({ candidate, preview, generation }) {
         video.pause();
         video.removeAttribute('src');
         video.load();
-        finishWithFallback('加载超时，可重新扫描');
+        finishWithFallback('previewTimedOut');
       }, 15000);
       const cleanup = (retainMedia = false) => {
         clearTimeout(timeout);
@@ -321,7 +353,7 @@ function loadCandidatePreview({ candidate, preview, generation }) {
         if (settled) return;
         settled = true;
         cleanup();
-        finishWithFallback(video.error?.code === MediaError.MEDIA_ERR_NETWORK ? '媒体请求失败' : '此资源暂无法预览');
+        finishWithFallback(video.error?.code === MediaError.MEDIA_ERR_NETWORK ? 'mediaRequestFailed' : 'previewUnavailable');
       };
       video.addEventListener('loadedmetadata', onMetadata, { once: true });
       video.addEventListener('loadeddata', onLoaded, { once: true });
@@ -330,7 +362,7 @@ function loadCandidatePreview({ candidate, preview, generation }) {
       video.load();
     };
 
-    if (!isSafePreviewUrl(candidate.url)) return finishWithFallback('本地网络资源不加载预览');
+    if (!isSafePreviewUrl(candidate.url)) return finishWithFallback('privatePreviewBlocked');
     if (!candidate.thumbnailUrl || !isSafePreviewUrl(candidate.thumbnailUrl)) return loadVideoFrame();
     const image = document.createElement('img');
     image.alt = '';
@@ -369,7 +401,7 @@ function renderCandidates(foundCandidates, pageUrl, pageTitle) {
   candidateSizeNodes.clear();
   candidateList.replaceChildren();
   emptyState.hidden = foundCandidates.length > 0;
-  emptyState.textContent = foundCandidates.length ? '' : '没有找到可直接下载的视频链接。可先播放视频再扫描；Blob、DRM 或临时地址可能无法识别。';
+  emptyState.textContent = foundCandidates.length ? '' : t('noMediaFound');
 
   for (const [index, candidate] of foundCandidates.entries()) {
     const itemId = `candidate-${index}`;
@@ -383,7 +415,7 @@ function renderCandidates(foundCandidates, pageUrl, pageTitle) {
     checkbox.addEventListener('change', updateSelection);
     const preview = document.createElement('span');
     preview.className = 'candidate-preview candidate-preview-empty';
-    preview.textContent = '正在加载预览…';
+    preview.textContent = t('loadingPreview');
     preview.setAttribute('aria-hidden', 'true');
     const details = document.createElement('span');
     details.className = 'candidate-details';
@@ -393,11 +425,11 @@ function renderCandidates(foundCandidates, pageUrl, pageTitle) {
     title.title = title.textContent;
     const address = document.createElement('span');
     address.className = 'candidate-url';
-    address.textContent = `${resourceTypeLabels[candidate.type] || '视频'} · ${resourceLocation(candidate)}`;
+    address.textContent = `${t(resourceTypeLabels[candidate.type] || 'mp4Video')} · ${resourceLocation(candidate)}`;
     address.title = candidate.displayUrl || resourceLocation(candidate);
     const size = document.createElement('span');
     size.className = 'candidate-size';
-    size.textContent = formatSizeResult({ status: 'pending' });
+    size.textContent = formatSizeResult({ status: 'pending' }, t);
     details.append(title, address, size);
     row.append(checkbox, preview, details);
     candidateList.append(row);
@@ -423,14 +455,14 @@ function renderCandidates(foundCandidates, pageUrl, pageTitle) {
   updateSelection();
 
   if (!hostReady) {
-    for (const size of candidateSizeNodes.values()) size.textContent = '安装 Windows 组件后可查看大小';
+    for (const size of candidateSizeNodes.values()) size.textContent = t('installWindowsForSize');
     return;
   }
   runProbeQueue(foundCandidates, (candidate) => requestWorker('probeSize', { url: candidate.url }), 3, (index, result) => {
     if (scanGeneration !== candidateScanGeneration) return;
     const size = candidateSizeNodes.get(`candidate-${index}`);
-    if (size) size.textContent = formatSizeResult(result.ok ? result.value : { status: 'failed' });
-  }).catch(() => showNotice('无法开始获取资源大小，请刷新后重试。'));
+    if (size) size.textContent = formatSizeResult(result.ok ? result.value : { status: 'failed' }, t);
+  }).catch(() => showNotice(t('sizeProbeStartFailed')));
 }
 
 function renderTasks(taskItems) {
@@ -451,8 +483,8 @@ function renderTasks(taskItems) {
     name.title = name.textContent;
     const state = document.createElement('span');
     state.className = 'task-state';
-    const stateLabels = { queued: '排队中', downloading: '下载中', finalizing: '正在合成视频', completed: '下载完成', paused: '已暂停', interrupted: '中断，可继续', failed: '下载失败', cancelled: '已取消' };
-    state.textContent = stateLabels[task.status] || task.status || '等待中';
+    const stateLabels = { queued: 'taskQueued', downloading: 'taskDownloading', finalizing: 'taskFinalizing', completed: 'taskCompleted', paused: 'taskPaused', interrupted: 'taskInterrupted', failed: 'taskFailed', cancelled: 'taskCancelled' };
+    state.textContent = stateLabels[task.status] ? t(stateLabels[task.status]) : task.status || t('taskWaiting');
     state.dataset.status = task.status || 'queued';
     top.append(name, state);
     row.append(top);
@@ -480,8 +512,8 @@ function renderTasks(taskItems) {
     actions.className = 'task-actions';
     const openButton = document.createElement('button');
     openButton.type = 'button';
-    openButton.textContent = '打开文件夹';
-    openButton.title = '打开此任务的保存文件夹';
+    openButton.textContent = t('openFolder');
+    openButton.title = t('openTaskFolderTitle');
     openButton.addEventListener('click', async () => {
       try {
         await requestWorker('openTaskDirectory', { taskId: task.taskId });
@@ -498,10 +530,10 @@ function renderTasks(taskItems) {
       button.addEventListener('click', () => runTaskAction(task, action));
       actions.append(button);
     };
-    if (['downloading', 'finalizing'].includes(task.status)) addAction('暂停', 'pause');
-    if (['paused', 'interrupted', 'failed'].includes(task.status)) addAction(task.status === 'failed' ? '重试下载' : '继续下载', 'resume');
-    if (!['completed', 'cancelled'].includes(task.status)) addAction('取消', 'cancel');
-    if (['completed', 'cancelled', 'failed', 'interrupted', 'paused'].includes(task.status)) addAction('删除', 'delete');
+    if (['downloading', 'finalizing'].includes(task.status)) addAction(t('pause'), 'pause');
+    if (['paused', 'interrupted', 'failed'].includes(task.status)) addAction(task.status === 'failed' ? t('retryDownload') : t('resumeDownload'), 'resume');
+    if (!['completed', 'cancelled'].includes(task.status)) addAction(t('cancel'), 'cancel');
+    if (['completed', 'cancelled', 'failed', 'interrupted', 'paused'].includes(task.status)) addAction(t('delete'), 'delete');
     row.append(actions);
     taskList.append(row);
   }
@@ -512,8 +544,8 @@ function updateTaskProgress(task, row) {
   const details = row.querySelector('.progress-details');
   details.hidden = task.status !== 'downloading';
   if (!details.hidden) {
-    const percent = Number.isFinite(Number(task.percent)) ? `${Number(task.percent).toFixed(1)}%` : '正在计算进度';
-    details.textContent = [percent, task.speed || '正在计算速度', task.eta ? `剩余 ${task.eta}` : '正在估算剩余时间'].join(' · ');
+    const percent = Number.isFinite(Number(task.percent)) ? `${Number(task.percent).toFixed(1)}%` : t('calculatingProgress');
+    details.textContent = [percent, task.speed || t('calculatingSpeed'), task.eta ? t('timeRemaining', [task.eta]) : t('estimatingTime')].join(' · ');
   }
 }
 
@@ -521,7 +553,7 @@ async function refreshTasks() {
   if (!hostReady) { document.querySelector('#hostSetup').hidden = false; return; }
   try {
     const response = await requestWorker('listTasks');
-    renderBridgeState({ status: 'connected', message: '本机下载服务已连接' }, true);
+    renderBridgeState({ status: 'connected' }, true);
     renderTasks(response.tasks || []);
   } catch (error) {
     // The service worker owns the real state; do not overwrite it with a guess.
@@ -541,7 +573,7 @@ async function refreshBridgeState() {
 
 async function runTaskAction(task, action) {
   try {
-    if (action === 'delete' && !window.confirm(`删除“${task.outputName}”及其下载文件和未完成数据？`)) return;
+    if (action === 'delete' && !window.confirm(t('deleteTaskConfirm', [task.outputName]))) return;
     let cookies;
     if (action === 'resume' && task.requiresLogin) {
       const [authorized] = await authorizeCookies([{ url: task.displayUrl }]);
@@ -562,7 +594,7 @@ async function runTaskAction(task, action) {
 async function scan() {
   const button = document.querySelector('#scanButton');
   button.disabled = true;
-  button.textContent = '扫描中…';
+  button.textContent = t('scanning');
   try {
     const result = await requestWorker('scan');
     document.querySelector('#pageTitle').textContent = result.title;
@@ -571,7 +603,7 @@ async function scan() {
     showNotice(error.message);
   } finally {
     button.disabled = false;
-    button.textContent = '扫描此页';
+    button.textContent = t('scanPage');
   }
 }
 
@@ -583,7 +615,7 @@ async function downloadSelected() {
   // before authorizeCookies. Host readiness is established by the bounded ping.
   if (!hostReady) {
     document.querySelector('#hostSetup').hidden = false;
-    showNotice('请先安装本机下载组件并点击“重试连接”，扫描、预览和选择仍可使用');
+    showNotice(t('hostRequiredNotice'));
     return;
   }
   const useCookies = document.querySelector('#useCookies').checked;
@@ -603,18 +635,18 @@ async function downloadSelected() {
         ...(entry.candidate.videoId ? { videoId: entry.candidate.videoId } : {}),
       });
       if (!identity) {
-        skipped.push({ reason: '无法识别该资源地址' });
+        skipped.push({ reason: t('unknownResource') });
         continue;
       }
       if (identity.contentKey && queuedContentKeys.has(identity.contentKey)) {
-        skipped.push({ reason: '本次已选择同一视频的其他清晰度' });
+        skipped.push({ reason: t('duplicateRendition') });
         continue;
       }
       // Check both the local task list and the host, so a task started in
       // another popup session is still detected as a duplicate.
       const known = findDuplicateTaskByIdentity(identity, [...tasks.values()]);
       if (known) {
-        skipped.push({ reason: `已存在相同任务（${known.outputName}）`, taskId: known.taskId });
+        skipped.push({ reason: t('duplicateTask', [known.outputName]), taskId: known.taskId });
         continue;
       }
       const { duplicate: remote } = await requestWorker('checkDuplicate', {
@@ -623,7 +655,7 @@ async function downloadSelected() {
         pageUrl: entry.candidate.pageUrl,
       });
       if (remote?.duplicate === true) {
-        skipped.push({ reason: `已存在相同任务（${remote.outputName}）`, taskId: remote.taskId });
+        skipped.push({ reason: t('duplicateTask', [remote.outputName]), taskId: remote.taskId });
         continue;
       }
       const taskId = crypto.randomUUID();
@@ -643,11 +675,11 @@ async function downloadSelected() {
       started += 1;
     }
     if (skipped.length && started) {
-      showNotice(`已加入下载队列（${started} 项），另跳过 ${skipped.length} 项：${skipped[0].reason}`);
+      showNotice(t('downloadQueueAddedAndSkipped', [started, skipped.length, skipped[0].reason]));
     } else if (skipped.length) {
-      showNotice(`未添加新任务，已跳过 ${skipped.length} 项：${skipped[0].reason}`);
+      showNotice(t('downloadQueueSkipped', [skipped.length, skipped[0].reason]));
     } else {
-      showNotice(`已加入下载队列（${started} 项）`);
+      showNotice(t('downloadQueueAdded', [started]));
     }
     await refreshTasks();
   } catch (error) {
@@ -664,7 +696,7 @@ function renderAllowedSites() {
   if (!settings.allowedSites.length) {
     const empty = document.createElement('span');
     empty.className = 'allowed-site-empty';
-    empty.textContent = '尚未添加站点';
+    empty.textContent = t('noSitesAdded');
     list.append(empty);
     return;
   }
@@ -676,7 +708,7 @@ function renderAllowedSites() {
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.textContent = '×';
-    remove.title = `移除 ${site}`;
+    remove.title = t('removeSiteTitle', [site]);
     remove.addEventListener('click', async () => {
       settings = await saveSettings({ ...settings, allowedSites: settings.allowedSites.filter((item) => item !== site) });
       renderAllowedSites();
@@ -700,11 +732,11 @@ async function addAllowedSite() {
   const input = document.querySelector('#allowedSiteInput');
   const hostname = normalizeHostname(input.value);
   if (!hostname) {
-    showNotice('请输入有效的域名，例如 media.example.com');
+    showNotice(t('invalidDomain'));
     return;
   }
   if (settings.allowedSites.includes(hostname)) {
-    showNotice('该站点已在允许列表中');
+    showNotice(t('siteAlreadyAllowed'));
     return;
   }
   settings = await saveSettings({ ...settings, allowedSites: [...settings.allowedSites, hostname] });
@@ -714,15 +746,15 @@ async function addAllowedSite() {
 }
 
 async function refreshHostSettings() {
-  if (!hostReady) { document.querySelector('#defaultDirectory').textContent = '安装本机组件后可设置下载目录'; return; }
+  if (!hostReady) { document.querySelector('#defaultDirectory').textContent = t('installHostForFolder'); return; }
   try {
     const result = await requestWorker('getSettings');
-    document.querySelector('#defaultDirectory').textContent = `默认目录：${result.settings.defaultDownloadDirectory}`;
+    document.querySelector('#defaultDirectory').textContent = t('defaultFolder', [result.settings.defaultDownloadDirectory]);
     const input = document.querySelector('#downloadDirectory');
-    input.placeholder = '留空恢复默认目录';
+    input.placeholder = t('restoreDefaultDirectory');
     if (!downloadDirectoryDirty) input.value = result.settings.downloadDirectory;
   } catch (error) {
-    document.querySelector('#defaultDirectory').textContent = '本机下载器未连接，无法读取默认目录';
+    document.querySelector('#defaultDirectory').textContent = t('hostNotConnectedFolder');
   }
 }
 
@@ -732,19 +764,19 @@ async function saveDownloadDirectory() {
   const rawValue = input.value;
   const value = normalizeDownloadDirectory(rawValue);
   if (rawValue.trim() && !value) {
-    showNotice('路径不能超过 260 个字符，也不能包含控制字符');
+    showNotice(t('pathTooLong'));
     return;
   }
   if (value && !/^(?:[A-Za-z]:\\|\\\\)/.test(value)) {
-    showNotice('请输入绝对路径，例如 D:\\Videos');
+    showNotice(t('absolutePathRequired'));
     return;
   }
   try {
     const result = await requestWorker('setDownloadDirectory', { downloadDirectory: value });
     input.value = result.settings.downloadDirectory;
     downloadDirectoryDirty = false;
-    document.querySelector('#defaultDirectory').textContent = `默认目录：${result.settings.defaultDownloadDirectory}`;
-    showNotice(value ? '下载保存路径已更新' : '已恢复默认下载路径');
+    document.querySelector('#defaultDirectory').textContent = t('defaultFolder', [result.settings.defaultDownloadDirectory]);
+    showNotice(value ? t('downloadFolderUpdated') : t('downloadFolderReset'));
   } catch (error) {
     showNotice(error.message);
   }

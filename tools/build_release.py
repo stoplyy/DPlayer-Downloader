@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ["popup.html", "popup.css", "popup.js", "service_worker.js",
            "scanner.mjs", "cookie_authorization.mjs", "task_actions.mjs",
            "size_display.mjs", "probe_queue.mjs", "settings.mjs",
-           "bridge_status.mjs", "media_identity.mjs", "release_config.mjs"]
+           "bridge_status.mjs", "media_identity.mjs", "release_config.mjs", "i18n.mjs"]
 PERMISSIONS = ["activeTab", "scripting", "nativeMessaging", "storage", "alarms"]
 DEV_ID = "mcpnbecppicmobinpgiiomjihgcfikdl"
 
@@ -58,7 +58,7 @@ def config_errors(config, target, release=True):
         value = config.get(f"{browser}ExtensionId", "")
         if not re.fullmatch(r"[a-p]{32}", value) or value == DEV_ID:
             errors.append(f"Set the confirmed {browser}ExtensionId (not the development ID)")
-    if config.get("storeIdsConfirmed") is not True:
+    if target == "host" and config.get("storeIdsConfirmed") is not True:
         errors.append("Confirm the IDs assigned by both stores: storeIdsConfirmed")
     if config.get("publicPagesVerified") is not True:
         errors.append("Publish and verify the release/support/privacy URLs: publicPagesVerified")
@@ -118,12 +118,14 @@ def validate_payload(files):
         raise ValueError("Unexpected manifest version or permissions")
     if manifest.get("optional_permissions") != ["cookies"] or manifest.get("optional_host_permissions") != ["http://*/*", "https://*/*"]:
         raise ValueError("Unexpected optional permissions")
-    allowed_keys = {"manifest_version", "name", "version", "description", "permissions", "optional_permissions", "optional_host_permissions", "action", "background", "icons", "minimum_chrome_version", "content_security_policy"}
+    allowed_keys = {"manifest_version", "name", "version", "description", "default_locale", "permissions", "optional_permissions", "optional_host_permissions", "action", "background", "icons", "minimum_chrome_version", "content_security_policy"}
     if set(manifest) - allowed_keys:
         raise ValueError("Unexpected manifest capability (key/update URL/content scripts etc.)")
     expected_csp = "script-src 'self'; object-src 'none'; img-src 'self' data: http: https:; media-src 'self' http: https:"
     if manifest.get('content_security_policy') != {'extension_pages': expected_csp}:
         raise ValueError('Unexpected extension content security policy')
+    if manifest.get("default_locale") != "en" or manifest.get("name") != "__MSG_extensionName__" or manifest.get("description") != "__MSG_extensionDescription__":
+        raise ValueError("Extension metadata must use the default-locale message references")
     references = [manifest["action"]["default_popup"], manifest["background"]["service_worker"], *manifest["icons"].values(), *manifest["action"]["default_icon"].values()]
     if manifest["background"].get("type") != "module":
         raise ValueError("The worker must be an ES module")
@@ -142,6 +144,18 @@ def validate_payload(files):
         data = files[name]
         if data[:8] != b"\x89PNG\r\n\x1a\n" or int.from_bytes(data[16:20], "big") != int(size) or int.from_bytes(data[20:24], "big") != int(size):
             raise ValueError(f"Invalid icon dimensions: {name}")
+    locale_files = [name for name in files if name.startswith("_locales/") and name.endswith("/messages.json")]
+    if set(locale_files) != {"_locales/en/messages.json", "_locales/zh_CN/messages.json"}:
+        raise ValueError("Both English and Simplified Chinese locale resources are required")
+    locale_keys = []
+    for name in locale_files:
+        messages = json.loads(files[name])
+        locale_keys.append(set(messages))
+        for key, value in messages.items():
+            if not re.fullmatch(r"[A-Za-z0-9_]+", key) or not isinstance(value, dict) or not isinstance(value.get("message"), str):
+                raise ValueError(f"Invalid locale message: {name}:{key}")
+    if locale_keys[0] != locale_keys[1]:
+        raise ValueError("Locale message keys differ between English and Simplified Chinese")
 
 
 def build_extension(browser, release=False, root=ROOT):
@@ -153,9 +167,13 @@ def build_extension(browser, release=False, root=ROOT):
     manifest = read_json(source / "manifest.json")
     manifest.pop("key", None)  # Store IDs are assigned by each store, never inferred.
     manifest["version"] = config["extensionVersion"]
-    manifest["name"] = config["productName"] + ("" if release else " (DEVELOPMENT)")
+    if not release:
+        manifest["name"] = config["productName"] + " (DEVELOPMENT)"
     manifest["minimum_chrome_version"] = config["minimumBrowserVersion"]
     files = {name: (source / name).read_bytes() for name in RUNTIME}
+    for locale in ("en", "zh_CN"):
+        name = f"_locales/{locale}/messages.json"
+        files[name] = (source / name).read_bytes()
     for size in (16, 32, 48, 128):
         name = f"icons/icon-{size}.png"
         files[name] = (source / name).read_bytes()

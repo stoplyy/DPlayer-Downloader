@@ -6,7 +6,7 @@ Edge Add-ons 与 Chrome Web Store 各一个 MV3 ZIP，共用 `extensions/edge` �
 
 ## 维护者在发布时填写
 
-编辑 `release/config.json`：两个商店确认的 `edgeExtensionId` / `chromeExtensionId`（32 个 a-p 字符）、`storeIdsConfirmed`、`publisher`、`signingCertificateThumbprint`。发布者必须与签名证书 SimpleName 一致；证书/私钥留在当前用户证书库，不放仓库。分别管理扩展和 Host 版本及最低兼容版本。
+编辑 `release/config.json`：两个商店确认的 `edgeExtensionId` / `chromeExtensionId`（32 个 a-p 字符），并记录各商店条目 ID 供后台管理。Edge/Chrome 正式 ZIP 分别只要求对应商店确认的扩展 ID；`storeIdsConfirmed` 表示两个商店 ID 均已确认，Host 安装器发布前必须为 true。另需填写 `publisher` 和 `signingCertificateThumbprint`。发布者必须与签名证书 SimpleName 一致；证书/私钥留在当前用户证书库，不放仓库。分别管理扩展和 Host 版本及最低兼容版本。
 
 先在商店后台创建草稿获得 ID。商店 ZIP 不依赖 Host 签名证书；Host 安装器同时需要两个 ID。若商店需要先上传包才分配 ID，可上传开发 ZIP 到**未发布的草稿**取得 ID，然后回填配置、生成正式 ZIP 替换草稿；绝不能公开 DEVELOPMENT 包。
 
@@ -53,6 +53,21 @@ pwsh -File installer/build.ps1 -Iscc 'C:\path\ISCC.exe' -SignTool 'C:\path\signt
 | 签名 | 安装器、卸载器和分发 exe 的签名链、时间戳和发布者正确 |
 
 先按 store-listing.md 提交隐藏/未公开审核；人工上传正式 ZIP 和安装器时，把版本、SHA-256、签名发布者、对应源码、变更记录、系统要求与卸载说明一并放在发布页。仅单元测试通过不能替代此验收。
+
+## GitHub Releases 发布
+
+`.github/workflows/draft-release.yml` 在推送 `v<extensionVersion>` 标签后构建正式 Edge ZIP，并创建 GitHub Draft Release。也可在 Actions 手动运行此 workflow，输入已存在且对应版本的标签。它只打包扩展，不构建 Host 安装器。
+
+正式发布前，在满足本清单的 Windows 发布机上运行 `installer/build.ps1`。确认该次构建的 `release-manifest.json` 中 `sourceDirty` 为 false，核对安装器签名、版本与 SHA-256；再上传安装器和清单到工作流创建的 Draft Release：
+
+```powershell
+$config = Get-Content release/config.json -Raw | ConvertFrom-Json
+$tag = "v$($config.extensionVersion)"
+$hostDir = "dist/release/host-$($config.hostVersion)"
+gh release upload $tag "$hostDir/frame-video-downloader-host-$($config.hostVersion)-windows-x64.exe" "$hostDir/release-manifest.json"
+```
+
+检查 Draft Release 中包含正式 Edge ZIP、对应 JSON 校验文件、已签名 Host 安装器和安装器清单；完善发布说明后，再在 GitHub Releases 页面发布。扩展中的 Host 下载链接打开 Releases 页面，用户可在那里下载安装器。不要发布仅含 Edge ZIP 的 Draft，也不要把 DEVELOPMENT 包附加到正式 Release。
 
 ## 规范依据
 

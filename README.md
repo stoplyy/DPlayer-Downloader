@@ -85,15 +85,18 @@ Web Store + a separate signed Windows Host installer**. Complete downloading
 requires Windows 10/11 x64 and Edge or Chrome 120+. Store listings are pending;
 no store ID or signing identity is invented in this repository.
 
-1. Install Frame Video Downloader from your browser's store (links will be added
-   after publication). Scanning and candidate selection work without the Host.
-2. To download, follow the popup's official installation link to
-   [GitHub Releases](https://github.com/stoplyy/DPlayer-Downloader/releases).
-   Run the signed Host installer for your Windows user; no administrator rights,
-   Python, Developer mode or unpacked extension loading are required.
+1. Install [Frame Video Downloader from Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/0RDCKF2Z9NKQ).
+   Scanning and candidate selection work without the Host.
+2. To download, follow the popup's installation link to
+   [GitHub Releases](https://github.com/stoplyy/DPlayer-Downloader/releases) and
+   download the signed Windows x64 Host installer. Follow the
+   [installation guide](docs/installation.md); the installer is per-user and
+   does not need administrator rights, Python, Developer mode or unpacked
+   extension loading.
 3. Return to the extension and click **重试连接**. Downloads require a compatible
-   Host handshake. Updates to the extension come from its store; Host updates
-   are installed manually from the official release page.
+   Host handshake. Edge updates come from the store; Host updates are installed
+   manually from the official release page. Chrome Web Store publication is
+   pending.
 
 Remove the extension in browser settings. Remove **Frame Video Downloader Host**
 in Windows Installed apps. Host uninstall preserves downloads, task state and

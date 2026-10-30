@@ -6,7 +6,7 @@
 
 ## 普通用户
 
-1. 在 Microsoft Edge Add-ons 或 Chrome Web Store 安装 **Frame Video Downloader**。正式商店链接将在首次上架后放入项目 README；尚未上架时不要把开发 ZIP 当成商店版。
+1. 在 [Microsoft Edge Add-ons 安装 Frame Video Downloader](https://microsoftedge.microsoft.com/addons/detail/0RDCKF2Z9NKQ)。Chrome Web Store 版本尚未发布；不要把开发 ZIP 当成商店版。
 2. 点击扩展图标，选择“扫描此页”。无需本机组件即可扫描和勾选媒体。
 3. 下载时按弹窗中的“安装 / 更新本机组件”进入[官方 Releases](https://github.com/stoplyy/DPlayer-Downloader/releases)。下载 Windows x64 Host 安装器，核对版本、发布者签名和 SHA-256 后运行。
 4. 安装器将 Host、yt-dlp、FFmpeg/ffprobe、许可证及对应源码安装到 `%LOCALAPPDATA%\FrameVideoDownloader\app`，仅注册当前用户 Edge 和 Chrome 的 Native Messaging。无需管理员权限、Python 或开发者模式。

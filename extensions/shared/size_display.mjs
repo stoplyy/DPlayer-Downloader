@@ -13,13 +13,14 @@ function formatBytes(sizeBytes) {
   return `${value.toFixed(1)} ${UNITS[unitIndex]}`;
 }
 
-export function formatSizeResult(result) {
-  if (result?.status === 'pending') return '正在获取大小…';
-  if (result?.status === 'unavailable') return '大小未知';
-  if (result?.status === 'failed') return '暂时无法获取大小';
-  if (!['exact', 'estimated'].includes(result?.status)) return '暂时无法获取大小';
+export function formatSizeResult(result, translate) {
+  const message = (key, fallback, args = []) => translate ? translate(key, args) : fallback;
+  if (result?.status === 'pending') return message('sizePending', '正在获取大小…');
+  if (result?.status === 'unavailable') return message('sizeUnavailable', '大小未知');
+  if (result?.status === 'failed') return message('sizeFailed', '暂时无法获取大小');
+  if (!['exact', 'estimated'].includes(result?.status)) return message('sizeFailed', '暂时无法获取大小');
 
   const formatted = formatBytes(result.sizeBytes);
-  if (!formatted) return '暂时无法获取大小';
-  return result.status === 'estimated' ? `约 ${formatted}` : formatted;
+  if (!formatted) return message('sizeFailed', '暂时无法获取大小');
+  return result.status === 'estimated' ? message('sizeEstimated', `约 ${formatted}`, [formatted]) : formatted;
 }

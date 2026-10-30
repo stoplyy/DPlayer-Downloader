@@ -1,5 +1,7 @@
 # Frame Video Downloader
 
+**Languages:** English (default) | [简体中文](README.zh-CN.md)
+
 Scan DPlayer-style media from the active browser tab. **Phase 1 downloading is
 supported only on Windows 10/11 x64 with Microsoft Edge or Google Chrome 120+**;
 the browser extension alone is not a cross-platform downloader.

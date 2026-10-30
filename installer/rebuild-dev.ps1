@@ -26,6 +26,9 @@ $BaseDirectory = Join-Path $env:LOCALAPPDATA 'FrameVideoDownloader'
 $AppDirectory = Join-Path $BaseDirectory 'app'
 $ManifestPath = Join-Path $AppDirectory "$HostName.json"
 $RegistryPath = "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\$HostName"
+if (Test-Path -LiteralPath (Join-Path $AppDirectory 'unins000.exe')) {
+    throw 'A store Host installation exists. Do not overwrite it with the development helper; use a separate Windows test account.'
+}
 
 Push-Location $ProjectRoot
 try {

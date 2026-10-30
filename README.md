@@ -1,11 +1,18 @@
 # Frame Video Downloader
 
-Scan and download DPlayer-style HLS/MP4 media from the active browser tab.
+Scan DPlayer-style media from the active browser tab. **Phase 1 downloading is
+supported only on Windows 10/11 x64 with Microsoft Edge or Google Chrome 120+**;
+the browser extension alone is not a cross-platform downloader.
 
-The project ships a browser extension, a local Native Messaging host, and a
+The project ships Edge and Chrome store extensions, a local Native Messaging host, and a
 download engine built on `yt-dlp` + `ffmpeg`. Downloads run locally, HLS tasks
 resume from completed fragments, and every task is persisted so it can be
 resumed after a browser restart.
+
+On macOS, Linux, and ChromeOS, the Edge/Chrome extension may be installed for
+page scanning and candidate selection, but Phase 1 has no local download host
+for those systems. Downloading, size probing, and local task management require
+the Windows x64 Host. Windows ARM64 and 32-bit Windows are not supported targets.
 
 ## Repository layout
 
@@ -54,7 +61,7 @@ after editing anything under `extensions/shared`. The release build runs
 2. Copy `extensions/edge/sync-shared.mjs` into it (the script resolves
    `../shared` relative to its own location, so no edits are required).
 3. Run `node extensions/<browser>/sync-shared.mjs`.
-4. Add the browser's Native Messaging registry key to `installer/install.ps1`
+4. Add the browser's Native Messaging registration to `installer/host.iss`
    (Edge uses `HKCU:\Software\Microsoft\Edge\NativeMessagingHosts`,
    Chrome uses `HKCU:\Software\Google\Chrome\NativeMessagingHosts`).
 
@@ -71,29 +78,65 @@ The HLS integration test uses locally generated media and a loopback HTTP
 server only. It requires local `ffmpeg` and `yt-dlp` on PATH. It does not access
 external media URLs.
 
-## Release build
-
-The release build is intentionally fail-closed. Prepare the reviewed inputs
-described in `vendor/README.md`, including matching yt-dlp/FFmpeg binaries,
-complete third-party notices, and the exact yt-dlp and FFmpeg source archives.
-Review each source archive independently and pin its SHA-256 in
-`vendor/approved-licenses.json`; those fields are blank until review. Then run:
-
-```powershell
-.\installer\build.ps1
-```
-
-A successful build creates `dist/frame-video-downloader-windows-x64.zip`. No
-release ZIP is produced while any required binary, hash, source archive, or
-license notice is missing.
-
 ## Install and remove
 
-Extract the ZIP, then run `install.ps1` for the current Windows user. It installs the host under `%LOCALAPPDATA%\FrameVideoDownloader\app`, registers the Native Messaging manifest under the current user's Edge registry key, and opens `edge://extensions`. Enable Developer mode and load the installed `extension` directory as unpacked.
+The supported Phase 1 download distribution is **Microsoft Edge Add-ons / Chrome
+Web Store + a separate signed Windows Host installer**. Complete downloading
+requires Windows 10/11 x64 and Edge or Chrome 120+. Store listings are pending;
+no store ID or signing identity is invented in this repository.
 
-Run `uninstall.ps1` to remove the app files and Native Messaging registration. Task state and downloaded media are kept under `%LOCALAPPDATA%\FrameVideoDownloader\state` and `%USERPROFILE%\Downloads\FrameVideos`. The download directory can be changed from the popup settings panel; the choice is persisted in `%LOCALAPPDATA%\FrameVideoDownloader\settings.json`.
+1. Install Frame Video Downloader from your browser's store (links will be added
+   after publication). Scanning and candidate selection work without the Host.
+2. To download, follow the popup's official installation link to
+   [GitHub Releases](https://github.com/stoplyy/DPlayer-Downloader/releases).
+   Run the signed Host installer for your Windows user; no administrator rights,
+   Python, Developer mode or unpacked extension loading are required.
+3. Return to the extension and click **重试连接**. Downloads require a compatible
+   Host handshake. Updates to the extension come from its store; Host updates
+   are installed manually from the official release page.
 
-Each task row includes an “打开目录” action that opens its dedicated folder under `%USERPROFILE%\Downloads\FrameVideos\<taskId>`.
+Remove the extension in browser settings. Remove **Frame Video Downloader Host**
+in Windows Installed apps. Host uninstall preserves downloads, task state and
+settings. See [installation and migration](docs/installation.md) and
+[privacy policy](docs/privacy-policy.md) for data locations and optional cleanup.
+Only one browser Host session may manage a user's task state at a time; stop the
+service in the other browser before switching.
+
+## Release build
+
+See [release checklist](docs/release-checklist.md). Public metadata belongs in
+`release/config.json`; fill store IDs and signing identity when publishing.
+Private keys and passwords never belong in that file. Each store ZIP contains
+only the allowlisted extension runtime, icons and notice, with manifest.json at
+its root. Both use the canonical source in `extensions/edge`.
+
+```powershell
+node tools/sync-release.mjs
+node extensions/edge/sync-shared.mjs
+# Inspectable development ZIPs, distinctly named; no credentials needed.
+python -m tools.build_release extension --browser edge
+python -m tools.build_release extension --browser chrome
+# Formal store packages: requires confirmed store IDs and public URLs.
+python -m tools.build_release extension --browser edge --release
+python -m tools.build_release extension --browser chrome --release
+# Signed Host installer: also requires reviewed vendor inputs and signing tools.
+pwsh -File installer/build.ps1 -Iscc 'C:\path\ISCC.exe' -SignTool 'C:\path\signtool.exe'
+```
+
+The Host installer includes yt-dlp, FFmpeg/ffprobe, corresponding source and
+license materials; it registers both browsers under HKCU with exactly the two
+confirmed store IDs. The build checks hashes, versions, publisher signatures
+and timestamps and emits a release manifest. Missing inputs block official
+artifacts. Review Inno Setup's distribution license before commercial use.
+It never uploads a package. Development ZIPs go to `dist/development`; formal
+outputs go to `dist/release`.
+
+## Select all downloads
+
+After scanning, click **全选** above the media list, then **下载已选** to queue
+all selected videos. Click the checkbox again to clear the selection, or
+uncheck individual videos. The checkbox shows a mixed state when only some
+videos are selected; the footer always shows the selected count.
 
 ## Duplicate downloads
 
@@ -117,36 +160,26 @@ matching either key. A match in `queued`, `downloading`, `paused`, `interrupted`
 them. Selecting two renditions of one video in a single batch also queues only
 the first.
 
-## Bridge self-recovery
+## Host connection and recovery
 
-The extension keeps the local download service running on its own. It connects
-to the Native Messaging host on browser startup, on install/upgrade, and again
-after any disconnect, retrying with a bounded backoff (1s, 2s, 5s). A pending
-retry is also registered as an alarm so it still fires if Edge suspends the MV3
-service worker.
+A bounded handshake reports checking, ready, not installed, incompatible or
+failed. Missing/incompatible components wait for a manual retry rather than
+repeatedly launching processes. Unexpected disconnections use bounded backoff;
+state is persisted across worker suspension. Scan and local site preferences
+remain available while the Host is unavailable. Automatic size probes only run
+when the component is ready; the popup discloses these media-server requests.
 
-The handshake compares a protocol version (`host/protocol_version.py` and
-`extensions/shared/bridge_status.mjs`). An older host that answers `ping` but
-rejects newer messages is reported as a version mismatch with a reinstall
-action, instead of failing later on an unrelated action.
+The handshake checks both protocol and minimum Host version. The install/update
+panel points to fixed project HTTPS URLs, never downloads or executes an
+installer automatically, and does not mistake an opened release page for a
+successful installation. Active downloads are marked interrupted on recovery
+and require a user action to resume.
 
-If the host is unavailable, the popup shows the exact failure code and a
-concrete action instead of a generic "disconnected" label:
+### Development installation / rebuilding after a source change
 
-- **未安装或未注册** – run `installer\install.ps1` as the current Windows user, then click 启动服务.
-- **版本不一致** – rebuild/reinstall so host and extension match, then reload the extension.
-- **权限被拒绝** – verify `native-host.exe` exists and is executable.
-- **进程已退出** – click 启动服务 to relaunch the process.
-
-Click **启动服务** to start it manually at any time, or **停止服务** to stop it.
-Click the status text for a diagnostics popup listing yt-dlp/ffmpeg availability
-and whether the download directory is writable. On host startup, any task still
-marked queued/downloading/finalizing (left over from an abrupt exit) is marked
-`interrupted` so the queue never shows a task that is stuck forever.
-
-### Rebuilding after a source change
-
-After editing anything under `host/` or `extensions/`, run:
+Developer-only unpacked loading is supported for local testing. Do not use it
+as the public installation flow. The helper refuses to overwrite an installation
+managed by the official installer. After editing source, run:
 
 ```powershell
 .\installer\rebuild-dev.ps1
@@ -168,9 +201,10 @@ This probe is read-only; it never changes settings or starts a download.
 ## Privacy and limitations
 
 - Scanning only runs after the user clicks the popup action. It reads media-like HTTP(S) URLs visible in video/source elements, player JSON configuration, and the page's resource timing entries. A `blob:` URL is not treated as a downloadable source.
+- After a scan, the popup attempts to display a page-provided poster or an anonymous cross-origin MP4/WebM frame preview. It does not read website cookies for previews; media servers receive the preview request directly from the browser. Unsupported formats, protected streams, and servers without anonymous CORS support show a placeholder instead.
 - Cookie access is off by default. When enabled, the extension requests optional permission for each selected media host from that click; it reads cookies only after all requested hosts are approved. A denial stops the login-state operation. Cookie files are scoped to each authorized URL's exact hostname, use a current-user-only ACL on Windows, are not logged or persisted in task JSON, and are deleted when the worker ends.
 - The page may not reveal CDN or redirect hosts before download. Cookies are deliberately not broadened to parent domains or unknown CDN hosts. A source that requires a separate CDN login cookie may fail; authorize and scan that host explicitly if it is surfaced as a candidate.
 - Signed media URLs are encrypted with Windows DPAPI in task state. The extension UI displays URLs without query strings.
-- The popup settings panel stores two user preferences. "自动允许访问的站点" is a list of hostnames whose media candidates are pre-selected after a scan; matching covers the hostname and its subdomains only. "下载保存路径" sets the absolute folder that the Native Host uses for task output; it is validated and created by the host, and an invalid path is rejected with an error instead of falling back to a default.
+- The popup settings panel stores two user preferences. "自动勾选资源的站点" is a list of hostnames whose media candidates are pre-selected after a scan; matching covers the hostname and its subdomains only. "下载保存路径" sets the absolute folder that the Native Host uses for task output; it is validated and created by the host, and an invalid path is rejected with an error instead of falling back to a default.
 - The local egress proxy rejects non-public DNS answers and forwards HTTP requests through pinned addresses. Current tests cover local HTTP HLS routes, private-address refusal, and interrupted native-HLS continuation. HTTPS `CONNECT` exposes only the tunnel authority, not encrypted internal redirect/segment paths; this is not a claim of a full network sandbox against a compromised downloader.
 - Do not use this tool to bypass access controls or download material without permission. No real-site download has been used as a test.

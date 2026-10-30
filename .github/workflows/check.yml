@@ -1,0 +1,25 @@
+name: Source and development packages
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: node tools/sync-release.mjs --check
+      - run: node extensions/edge/sync-shared.mjs --check
+      - run: node --test tests/*.mjs
+      - run: python -m unittest discover -s tests -t . -v
+      - run: python -m tools.build_release extension --browser edge
+      - run: python -m tools.build_release extension --browser chrome
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DEVELOPMENT-only-browser-packages
+          path: dist/development/*

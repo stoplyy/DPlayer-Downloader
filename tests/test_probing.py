@@ -76,9 +76,9 @@ three.ts
 
         self.assertEqual(result, {"status": "exact", "sizeBytes": 1234567})
         self.assertEqual(opener.requests[0][0].method, "HEAD")
-        self.assertLessEqual(opener.requests[0][1], 3)
+        self.assertLessEqual(opener.requests[0][1], 6)
         self.assertFalse({"cookie", "referer", "authorization"} & {name.lower() for name, _ in opener.requests[0][0].header_items()})
-        self.assertEqual(proxy_timeouts, [3])
+        self.assertEqual(proxy_timeouts, [6])
         self.assertTrue(proxy.closed)
 
     def test_probes_hls_master_and_media_playlists_without_fetching_segments(self):
@@ -189,7 +189,7 @@ three.ts
         def open_with_elapsed_time(request, timeout):
             response = next(opener.responses)
             opener.requests.append((request, timeout))
-            clock.value = 8.1
+            clock.value = 20.1
             return response
 
         opener.open = open_with_elapsed_time

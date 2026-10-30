@@ -1,0 +1,6 @@
+Frame Video Downloader
+Project: https://github.com/stoplyy/DPlayer-Downloader
+
+This browser package contains the extension runtime only.
+The separately installed Windows download component includes yt-dlp and FFmpeg;
+its licenses, corresponding sources and third-party notices ship with that installer.

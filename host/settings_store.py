@@ -34,7 +34,8 @@ class SettingsStore:
             raise ValueError("Download directory must be a string")
         trimmed = value.strip()
         if not trimmed:
-            raise ValueError("Download directory must not be empty")
+            self._write({})
+            return self.get()
         if len(trimmed) > MAX_DIRECTORY_LENGTH:
             raise ValueError("Download directory path is too long")
         if any(ord(character) < 32 for character in trimmed):

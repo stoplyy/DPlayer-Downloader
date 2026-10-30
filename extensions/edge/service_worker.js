@@ -1,8 +1,9 @@
-import { checkProtocolVersion, describeNativeError, nextReconnectDelay, RECONNECT_DELAYS_MS } from './bridge_status.mjs';
+import { checkProtocolVersion, describeNativeError, hostAvailability, nextReconnectDelay, RECONNECT_DELAYS_MS } from './bridge_status.mjs';
+import { RELEASE } from './release_config.mjs';
 import { scanDocument, normalizeCandidates } from './scanner.mjs';
 import { taskActionMessage } from './task_actions.mjs';
 
-const HOST_NAME = 'com.local.frame_video_downloader';
+const HOST_NAME = RELEASE.nativeHostName;
 const BRIDGE_STATE_KEY = 'bridgeState';
 const RECONNECT_ALARM = 'frameBridgeReconnect';
 const RECONNECT_ALARM_MINUTES = 0.5;
@@ -20,7 +21,7 @@ function broadcastBridgeState(state) {
 }
 
 async function saveBridgeState(state) {
-  const next = { ...state, updatedAt: Date.now() };
+  const next = { ...state, availability: hostAvailability(state), updatedAt: Date.now() };
   await chrome.storage.local.set({ [BRIDGE_STATE_KEY]: next });
   broadcastBridgeState(next);
   return next;
@@ -43,7 +44,6 @@ async function markDisconnected(rawMessage, { userInitiated = false } = {}) {
     code: cause.code,
     message: cause.summary,
     action: cause.action,
-    detail: typeof rawMessage === 'string' ? rawMessage : '',
     attempts: reconnectAttempt,
     requiresManualStart: userInitiated || reconnectAttempt >= RECONNECT_DELAYS_MS.length,
   });
@@ -88,9 +88,8 @@ function connectNativeHost() {
     const error = chrome.runtime.lastError?.message || '本机桥接连接已断开';
     for (const pending of pendingRequests.values()) pending.reject(new Error(error));
     pendingRequests.clear();
-    reconnectAttempt = Math.max(1, reconnectAttempt + 1);
-    markDisconnected(error).then(() => scheduleReconnect());
-    chrome.runtime.sendMessage({ type: 'nativeUpdate', update: { type: 'bridgeStatus', connected: false, error } }).catch(() => {});
+    reconnectAttempt = Math.max(1, reconnectAttempt);
+    markDisconnected(error).then((state) => { if (state.code !== 'not-installed') scheduleReconnect(); });
   });
   return port;
 }
@@ -110,6 +109,12 @@ async function performStartBridge({ automatic = false } = {}) {
   if (automatic && stored.bridgeStopped) return { status: 'idle' };
   if (!automatic) await chrome.storage.local.set({ bridgeStopped: false });
   if (nativePort && bridgeReady) return { status: 'connected' };
+  const previous = (await chrome.storage.local.get(BRIDGE_STATE_KEY))[BRIDGE_STATE_KEY];
+  if (automatic && ['not-installed', 'incompatible'].includes(previous?.availability)) return previous;
+  if (automatic) reconnectAttempt = Math.max(reconnectAttempt, previous?.attempts || 0);
+  else reconnectAttempt = 0;
+  if (automatic && reconnectAttempt > RECONNECT_DELAYS_MS.length) return previous;
+  reconnectAttempt += 1;
   await saveBridgeState({
     status: 'connecting',
     message: automatic ? '正在自动启动本机下载服务' : '正在启动本机下载服务',
@@ -154,9 +159,8 @@ async function performStartBridge({ automatic = false } = {}) {
       bridgeReady = false;
       try { port.disconnect(); } catch { /* already gone */ }
     }
-    if (reconnectAttempt === 0) reconnectAttempt = 1;
     await markDisconnected(error?.message, { userInitiated: !automatic });
-    if (automatic) scheduleReconnect();
+    if (automatic && describeNativeError(error?.message).code !== 'not-installed') scheduleReconnect();
     return { status: 'disconnected' };
   }
 }
@@ -166,13 +170,13 @@ async function requestHost(message) {
     const state = await startBridge({ automatic: true });
     if (state.status !== 'connected') {
       const current = await getBridgeState();
-      throw new Error(current.state?.message || '本机下载服务已停止，请点击“启动服务”');
+      throw new Error(current.state?.message || '本机下载组件已停止，请点击“重试连接”');
     }
   }
   return nativeRequest(message);
 }
 
-function nativeRequest(message, timeoutMs = 20000) {
+function nativeRequest(message, timeoutMs = message.type === 'probeSize' ? 25000 : 20000) {
   const port = connectNativeHost();
   const id = `req-${Date.now()}-${++requestNumber}`;
   return new Promise((resolve, reject) => {
@@ -260,6 +264,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       ...(message.videoId ? { videoId: message.videoId } : {}),
     }),
     bridgeState: () => getBridgeState(),
+    ensureBridge: async () => { await startBridge({ automatic: true }); return getBridgeState(); },
     startBridge: async () => { await startBridge({ automatic: false }); return getBridgeState(); },
     stopBridge: async () => { await stopBridge(); return getBridgeState(); },
   };

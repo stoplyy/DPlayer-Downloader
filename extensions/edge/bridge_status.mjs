@@ -4,15 +4,16 @@
 // Must match host/protocol_version.py. A peer reporting a different number is
 // incompatible and needs a reinstall, which is reported as its own cause
 // rather than surfacing as unrelated "unsupported message" errors.
-export const PROTOCOL_VERSION = 4;
+import { RELEASE } from './release_config.mjs';
+export const PROTOCOL_VERSION = RELEASE.protocolVersion;
 
 const PROTOCOL_ACTION =
-  '扩展与本机下载服务版本不一致，请重新运行 installer\\install.ps1 安装最新版本，然后在 edge://extensions 点击“重新加载”。';
+  '请从官方发布页更新本机下载组件，然后点击“重试连接”；若组件较新，请同时更新商店扩展。';
 
 export function describeProtocolMismatch(hostVersion) {
   return {
     code: 'protocol-mismatch',
-    summary: `本机下载服务版本过低（协议 v${hostVersion}，需要 v${PROTOCOL_VERSION}）`,
+    summary: `本机下载组件协议不兼容（v${hostVersion}，需要 v${PROTOCOL_VERSION}）`,
     action: PROTOCOL_ACTION,
   };
 }
@@ -22,6 +23,13 @@ export function checkProtocolVersion(handshake) {
   // A host that never reports a version predates the handshake entirely.
   if (!Number.isInteger(version)) return describeProtocolMismatch('未知');
   if (version !== PROTOCOL_VERSION) return describeProtocolMismatch(version);
+  const parts = typeof handshake.hostVersion === 'string' && /^\d+\.\d+\.\d+$/.test(handshake.hostVersion)
+    ? handshake.hostVersion.split('.').map(Number) : null;
+  const minimum = RELEASE.minimumHostVersion.split('.').map(Number);
+  const difference = parts?.findIndex((value, index) => value !== minimum[index]);
+  if (!parts || (difference >= 0 && parts[difference] < minimum[difference])) {
+    return { code: 'host-version-mismatch', summary: `请更新本机下载组件至 ${RELEASE.minimumHostVersion} 或更高版本`, action: PROTOCOL_ACTION };
+  }
   return null;
 }
 
@@ -31,15 +39,18 @@ export const RECONNECT_DELAYS_MS = [1000, 2000, 5000];
 export const BRIDGE_STATUSES = ['idle', 'connecting', 'connected', 'disconnected'];
 
 const INSTALL_HINT =
-  '请以当前 Windows 用户运行安装包中的 installer\\install.ps1 完成注册，然后点击“启动服务”。';
+  '扫描仍可使用。下载需要本机组件，请打开官方发布页安装 Windows x64 组件，然后点击“重试连接”。';
 
 export function describeNativeError(message) {
   const text = typeof message === 'string' ? message.trim() : '';
   const lower = text.toLowerCase();
+  if (lower.includes('host-in-use')) {
+    return { code: 'host-in-use', summary: '本机组件正在另一个浏览器中使用', action: '请先在另一浏览器扩展中点击“停止服务”，然后在这里重试连接。' };
+  }
 
   if (
     lower.includes('not found') ||
-    lower.includes('specified native messaging host') ||
+    lower.includes('not registered') ||
     lower.includes('找不到') ||
     lower.includes('未找到')
   ) {
@@ -49,25 +60,34 @@ export function describeNativeError(message) {
       action: INSTALL_HINT,
     };
   }
-  if (lower.includes('access') || lower.includes('denied') || lower.includes('拒绝')) {
+  if (lower.includes('access') || lower.includes('denied') || lower.includes('forbidden') || lower.includes('拒绝')) {
     return {
       code: 'access-denied',
       summary: '无法启动本机下载服务（权限被拒绝）',
-      action: '请确认 native-host.exe 存在且可执行；必要时以管理员身份重新运行 installer\\install.ps1。',
+      action: '请用官方安装器修复本机组件，并检查浏览器策略或安全软件是否阻止连接；无需管理员安装。',
     };
   }
   if (lower.includes('has exited') || lower.includes('exited') || lower.includes('断开')) {
     return {
       code: 'host-exited',
       summary: '本机下载服务进程已退出',
-      action: '点击“启动服务”重新拉起进程。',
+      action: '点击“重试连接”；若仍失败，请从官方发布页修复组件。',
     };
   }
   return {
     code: 'unavailable',
-    summary: text || '本机下载服务不可用',
-    action: '点击“启动服务”重试；若仍失败，请重新运行 installer\\install.ps1。',
+    summary: '本机下载组件暂时不可用',
+    action: '点击“重试连接”；若仍失败，请从官方发布页修复组件或查看帮助。',
   };
+}
+
+// Public availability model; transport status is retained for internal recovery.
+export function hostAvailability(state) {
+  if (state?.status === 'connected') return 'ready';
+  if (!state || state.status === 'connecting') return 'checking';
+  if (state.code === 'not-installed') return 'not-installed';
+  if (['protocol-mismatch', 'host-version-mismatch'].includes(state.code)) return 'incompatible';
+  return 'failed';
 }
 
 export function nextReconnectDelay(attempt) {

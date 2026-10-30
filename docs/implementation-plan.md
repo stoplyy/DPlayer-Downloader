@@ -1,10 +1,10 @@
 # Edge HLS 视频下载器 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> 历史实现任务清单；分发架构以 docs/store-distribution-migration-plan.md 与 docs/release-checklist.md 为准。复选框不代表本次发布验收结果。
 
-**Goal:** 在 Windows 上交付 Edge MV3 扩展、Native Messaging Host 和 yt-dlp/ffmpeg 下载桥接，允许用户扫描/勾选当前页媒体、对 HLS 断线后续传，并通过一个安装包安装所有组件。
+**Goal:** 一期完整下载仅支持 Windows 10/11 x64。交付 Edge/Chrome MV3 扩展、Windows Native Messaging Host 和 yt-dlp/ffmpeg 下载桥接，允许用户扫描/预览/勾选当前页媒体、对 HLS 断线后续传，并通过浏览器商店扩展及独立 Windows Host 安装器交付。其他可安装扩展的平台仅提供扫描、可用预览与候选选择，不支持下载、大小探测或本机任务管理。
 
-**Architecture:** 扩展仅在用户操作时扫描当前标签页并通过 Native Messaging 发送有限任务协议。PyInstaller 将 Python Host 打包为独立 exe，不依赖目标机 Python；Host 对协议、路径和 URL 作校验，启动带受限本机 egress 代理的 yt-dlp worker；连接断开时终止 worker，但保留 HLS 分片与任务状态供用户重新确认恢复。PowerShell 安装脚本注册 HKCU Native Host；单个 ZIP 包含扩展、Host exe、经许可审查的工具二进制及安装/卸载脚本。
+**Architecture:** 扩展仅在用户操作时扫描当前标签页并通过 Native Messaging 发送有限任务协议。PyInstaller 将 Python Host 打包为独立 exe，不依赖目标机 Python；Host 对协议、路径和 URL 作校验，启动带受限本机 egress 代理的 yt-dlp worker；连接断开时终止 worker，但保留 HLS 分片与任务状态供用户重新确认恢复。Inno Setup 当前用户安装器注册 Edge / Chrome HKCU Native Host；独立白名单商店 ZIP 不包含本机文件。
 
 **Tech Stack:** Edge Manifest V3、原生 JavaScript/HTML/CSS、Python 3.12 标准库、Node `node:test`、yt-dlp、ffmpeg/ffprobe、PyInstaller、PowerShell、ZIP。
 
@@ -32,7 +32,7 @@
 - Create: `installer/native-host-manifest.template.json` — 固定 host name、stdio 与扩展 ID 模板。
 - Create: `installer/install.ps1` — 安装到当前用户目录、生成 Host manifest、注册 Native Host 并打开 Edge 扩展管理页。
 - Create: `installer/uninstall.ps1` — 移除程序和注册项，下载/任务数据默认保留。
-- Create: `installer/build.ps1` — PyInstaller 构建 Host exe，验证依赖版本/哈希/许可证材料并生成单一 ZIP 安装包。
+- Create: `installer/build.ps1` — PyInstaller 构建 Host exe，验证依赖版本/哈希/许可证材料并生成签名的 Host 安装器。
 - Create: `README.md` — 开发加载、构建、权限和限制说明。
 
 ## Task 1: 资源扫描逻辑（TDD）
@@ -82,16 +82,16 @@
 - [ ] 扩展在发现跨域 CDN/重定向主机时，逐个调用用户手势权限请求；拒绝任一必需主机权限则明确失败，不读取未授权域 Cookie、不静默降级。以扩展 API mock 验证每个 host permission 请求与 Cookie 查询域名一一对应。
 - [ ] 本地 HLS 多片段 fixture：强制杀进程、重启相同任务，用服务器请求计数确认已完成片段不重下；此测试不得访问真实视频服务器。
 
-## Task 5: Windows 单包安装交付
+## Task 5: 双商店与 Host 分发
 
-**Files:** `installer/native-host-manifest.template.json`, `installer/install.ps1`, `installer/uninstall.ps1`, `installer/build.ps1`, `README.md`, 构建所需 `vendor/` 输入文件
-
-- [ ] 生成固定扩展公钥并写入 manifest；install.ps1 将 Native Host manifest 模板中的固定 host name、`stdio`、安装后的绝对 exe 路径及 `allowed_origins` 扩展 ID 替换后写入安装目录，并在 HKCU 注册该 manifest 的绝对路径。
-- [ ] 安装测试解析 manifest 和注册表数据，验证 manifest 路径存在、ID/host name/type/path/registry 全部一致；卸载验证只移除程序状态、不误删视频任务数据。
-- [ ] build.ps1 先用 PyInstaller 构建无 Python 依赖的 `native_host.exe`，再生成含扩展、Host、yt-dlp、ffmpeg/ffprobe、LICENSE/NOTICE、install.ps1/uninstall.ps1 的单一 ZIP。
-- [ ] install.ps1 安装到 `%LOCALAPPDATA%`、注册当前用户 Native Host、打开 `edge://extensions` 指导 Load unpacked；uninstall.ps1 移除注册项和程序，下载与任务状态默认保留。
-- [ ] build.ps1 对缺失二进制、版本、哈希或许可材料显式失败；禁止静默联网下载未审查依赖。
-- [ ] 发布验收必须实际产出 ZIP，并在无 Python 的干净 Windows 用户账户执行安装、Host 启动、手动加载扩展、升级、卸载，验证升级保留任务数据；缺少工具/许可证/验证时明确判定未交付，不以构建指引替代安装包。
+- [x] 集中发布配置和生成常量；正式 ID、公开 URL、签名和许可输入缺失时阻断 release。
+- [x] Edge / Chrome 独立 ZIP，白名单打包、MV3 权限检查、资源/图标/共享文件检查。
+- [x] Inno Setup 当前用户安装器源码，HKCU 双注册、固定正式 ID、修复/升级/卸载、数据保留。
+- [x] 扩展内有限 Host 检测、安装/更新链接、重试；无 Host 仍可扫描和管理浏览器设置。
+- [x] 隐私政策、商店文案、权限用途和发布清单。
+- [ ] 发布者填写两个正式商店 ID、证书指纹与发布者；完成依赖完整源码及许可证审核。
+- [ ] 生成签名安装器，在无 Python 的干净 Windows 标准用户账户完成双浏览器、升级/取消/失败/卸载验收。
+- [ ] 发布公开隐私政策及安装器，按 store-listing.md 完成两个商店问卷与审核。
 
 ## Task 6: 集成与验收
 

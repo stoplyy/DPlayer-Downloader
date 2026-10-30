@@ -18,11 +18,11 @@
     <div class="section-heading"><h2>设置</h2><button id="closeSettings" class="text-button">关闭</button></div>
     <label class="settings-label" for="downloadDirectory">下载保存路径</label>
     <div class="settings-row">
-      <input id="downloadDirectory" class="settings-input" type="text" placeholder="留空使用默认目录" spellcheck="false">
+      <input id="downloadDirectory" class="settings-input" type="text" placeholder="留空恢复默认目录" spellcheck="false">
       <button id="saveDownloadDirectory" class="text-button">保存</button>
     </div>
     <div id="defaultDirectory" class="option-note"></div>
-    <label class="settings-label" for="allowedSiteInput">自动允许访问的站点</label>
+    <label class="settings-label" for="allowedSiteInput">自动勾选资源的站点</label>
     <div class="settings-row">
       <input id="allowedSiteInput" class="settings-input" type="text" placeholder="例如 media.example.com" spellcheck="false">
       <button id="addAllowedSite" class="text-button">添加</button>
@@ -35,32 +35,40 @@
     <div id="pageTitle" class="page-title">等待扫描</div>
     <div class="bridge-row">
       <div id="bridgeStatus" class="bridge-status"><span class="status-dot"></span><span id="bridgeStatusText">正在连接本机下载器</span></div>
-      <button id="bridgeAction" class="bridge-button" type="button">启动服务</button>
+      <button id="bridgeAction" class="bridge-button" type="button">重试连接</button>
     </div>
     <div id="bridgeHint" class="bridge-hint" hidden></div>
   </section>
   <main>
     <div class="section-heading">
-      <h1>媒体资源</h1>
+      <h1>视频资源</h1>
       <button id="scanButton" class="text-button">扫描此页</button>
     </div>
-    <div id="emptyState" class="empty-state">点击“扫描此页”查找视频资源</div>
+    <aside class="disclosure">点击扫描后才读取当前网页。预览、大小检查和下载会访问媒体服务器；预览不使用网站登录状态。部分格式、受保护或不允许匿名跨域加载的资源无法预览。<a id="privacyLink" target="_blank" rel="noopener noreferrer">隐私说明</a></aside>
+    <section id="hostSetup" class="host-setup" aria-live="polite" hidden>
+      <h2 id="hostSetupTitle">下载功能需要本机组件</h2>
+      <p id="hostSetupDescription">扫描无需安装。下载需要 Windows 10/11 x64 本机组件（下载服务、yt-dlp、FFmpeg），不需要 Python。</p>
+      <ol id="hostSetupSteps"><li>前往 GitHub Releases 下载并运行 Windows x64 安装包，无需管理员权限。</li><li>安装完成后，回到这里点击“重试连接”。</li></ol>
+      <div class="setup-links"><a id="installHostLink" target="_blank" rel="noopener noreferrer">下载 Windows 本机组件（GitHub Releases）</a><a id="supportLink" target="_blank" rel="noopener noreferrer">帮助与反馈</a></div>
+      <p class="option-note">可从 Windows“已安装的应用”卸载组件，保留任务与视频；浏览器扩展需单独卸载。</p>
+    </section>
+    <div id="emptyState" class="empty-state" role="status" aria-live="polite">点击“扫描此页”查找视频资源</div>
     <div id="selectionToolbar" class="selection-toolbar" hidden>
-      <label class="select-all"><input id="selectAll" type="checkbox" aria-controls="candidateList"><span>全选</span></label>
-      <span id="candidateCount"></span>
+      <label class="select-all"><input id="selectAll" type="checkbox" aria-controls="candidateList"><span>全选资源</span></label>
+      <span id="candidateCount" role="status" aria-live="polite"></span>
     </div>
-    <div id="candidateList" class="candidate-list" aria-live="polite"></div>
+    <div id="candidateList" class="candidate-list"></div>
     <div class="download-options">
-      <label class="consent-row"><input id="useCookies" type="checkbox"><span class="switch"></span><span>使用当前站点登录态</span></label>
-      <div class="option-note">仅对本次任务按需请求所选媒体域权限</div>
+      <label class="consent-row"><input id="useCookies" type="checkbox"><span class="switch"></span><span>使用所选网站的登录状态</span></label>
+      <div class="option-note">默认关闭。启用后会读取所选媒体网站的 Cookie，并按需请求访问权限。</div>
     </div>
     <div id="taskSection" class="task-section" hidden>
-      <div class="section-heading"><h2>下载队列</h2><button id="refreshTasks2" class="text-button">刷新</button></div>
+      <div class="section-heading"><h2>下载任务</h2><button id="refreshTasks2" class="text-button">刷新任务</button></div>
       <div id="taskList" class="task-list"></div>
     </div>
   </main>
   <footer class="footer">
-    <span id="selectionCount">未选择资源</span>
+    <span id="selectionCount" role="status" aria-live="polite">尚未选择资源</span>
     <button id="downloadButton" class="primary-button" disabled><span aria-hidden="true">↓</span>下载已选</button>
   </footer>
   <div id="notice" class="notice" role="status" hidden></div>

@@ -186,6 +186,10 @@ class TaskServiceCookieTests(unittest.TestCase):
             self.assertEqual(service.output_dir, custom)
             self.assertEqual(service.get_settings()["defaultDownloadDirectory"], str(output_root))
 
+            restored = service.set_download_directory("")
+            self.assertEqual(restored["downloadDirectory"], str(output_root))
+            self.assertEqual(service.output_dir, output_root)
+
     def test_startup_reconciles_tasks_left_running_by_an_abrupt_host_exit(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "state"

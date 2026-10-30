@@ -8,18 +8,36 @@ import {
   describeNativeError,
   describeProtocolMismatch,
   isActiveTaskStatus,
+  hostAvailability,
   nextReconnectDelay,
 } from '../extensions/shared/bridge_status.mjs';
 
+test('classifies forbidden host correctly and never exposes raw paths or signed URLs', () => {
+  assert.equal(describeNativeError('Access to the specified native messaging host is forbidden.').code, 'access-denied');
+  const state = describeNativeError('Failed C:\\Users\\secret https://media.example/v?token=secret');
+  assert.doesNotMatch(JSON.stringify(state), /secret|token=/);
+});
+
+test('normalizes availability and checks minimum Host version separately', () => {
+  assert.equal(hostAvailability(null), 'checking');
+  assert.equal(hostAvailability({status:'connected'}), 'ready');
+  assert.equal(hostAvailability({status:'disconnected',code:'not-installed'}), 'not-installed');
+  assert.equal(hostAvailability({status:'disconnected',code:'protocol-mismatch'}), 'incompatible');
+  assert.equal(hostAvailability({status:'idle'}), 'failed');
+  assert.equal(checkProtocolVersion({protocolVersion:PROTOCOL_VERSION,hostVersion:'0.1.9'}).code, 'host-version-mismatch');
+  assert.equal(checkProtocolVersion({protocolVersion:PROTOCOL_VERSION,hostVersion:'0.10.0'}), null);
+  assert.equal(checkProtocolVersion({protocolVersion:PROTOCOL_VERSION}).code, 'host-version-mismatch');
+});
+
 test('accepts a host that reports the current protocol version', () => {
-  assert.equal(checkProtocolVersion({ protocolVersion: PROTOCOL_VERSION }), null);
+  assert.equal(checkProtocolVersion({ protocolVersion: PROTOCOL_VERSION, hostVersion: '0.2.0' }), null);
 });
 
 test('flags an older host that answered ping but lacks newer messages', () => {
   const mismatch = checkProtocolVersion({ protocolVersion: PROTOCOL_VERSION - 1 });
   assert.equal(mismatch.code, 'protocol-mismatch');
   assert.match(mismatch.summary, new RegExp(`v${PROTOCOL_VERSION - 1}`));
-  assert.match(mismatch.action, /install\.ps1/);
+  assert.match(mismatch.action, /官方发布页/);
 });
 
 test('flags a host that predates the version handshake entirely', () => {
@@ -39,7 +57,7 @@ test('describeProtocolMismatch names both versions', () => {
 test('classifies a missing host as not-installed with an install action', () => {
   const cause = describeNativeError('Specified native messaging host not found.');
   assert.equal(cause.code, 'not-installed');
-  assert.match(cause.action, /install\.ps1/);
+  assert.match(cause.action, /官方发布页/);
 });
 
 test('classifies access errors and host exits distinctly', () => {
@@ -51,7 +69,7 @@ test('classifies access errors and host exits distinctly', () => {
 test('falls back to a generic unavailable cause with a start action', () => {
   const cause = describeNativeError('');
   assert.equal(cause.code, 'unavailable');
-  assert.match(cause.action, /启动服务/);
+  assert.match(cause.action, /重试连接/);
   assert.equal(describeNativeError(undefined).code, 'unavailable');
 });
 

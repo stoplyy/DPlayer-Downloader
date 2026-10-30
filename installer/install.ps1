@@ -6,6 +6,10 @@ $AppDirectory = Join-Path $BaseDirectory 'app'
 $ManifestPath = Join-Path $AppDirectory "$HostName.json"
 $RegistryPath = "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\$HostName"
 $PackageDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
+if (Test-Path -LiteralPath (Join-Path $AppDirectory 'unins000.exe')) {
+    throw 'This directory is managed by the store Host installer. Use the official installer to repair/update it.'
+}
+Write-Warning 'Development-only helper. End users install extensions from their stores and use the signed Host installer.'
 
 if (-not (Test-Path (Join-Path $PackageDirectory 'native-host.exe'))) {
     throw 'Package is incomplete: native-host.exe is missing.'

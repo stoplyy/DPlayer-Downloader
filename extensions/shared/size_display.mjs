@@ -14,12 +14,12 @@ function formatBytes(sizeBytes) {
 }
 
 export function formatSizeResult(result) {
-  if (result?.status === 'pending') return '正在探测大小…';
-  if (result?.status === 'unavailable') return '无法估算';
-  if (result?.status === 'failed') return '探测失败';
-  if (!['exact', 'estimated'].includes(result?.status)) return '探测失败';
+  if (result?.status === 'pending') return '正在获取大小…';
+  if (result?.status === 'unavailable') return '大小未知';
+  if (result?.status === 'failed') return '暂时无法获取大小';
+  if (!['exact', 'estimated'].includes(result?.status)) return '暂时无法获取大小';
 
   const formatted = formatBytes(result.sizeBytes);
-  if (!formatted) return '探测失败';
+  if (!formatted) return '暂时无法获取大小';
   return result.status === 'estimated' ? `约 ${formatted}` : formatted;
 }

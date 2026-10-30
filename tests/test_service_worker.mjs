@@ -62,7 +62,7 @@ function createFakeChrome({ supportedTypes = HOST_MESSAGE_TYPES, protocolVersion
       case 'ping':
         return protocolVersion === null
           ? { type: 'pong', replyTo: message.id }
-          : { type: 'pong', protocolVersion, replyTo: message.id };
+          : { type: 'pong', protocolVersion, hostVersion: '0.2.0', replyTo: message.id };
       case 'list':
         return { type: 'tasks', tasks: [], replyTo: message.id };
       case 'getSettings':
@@ -251,7 +251,7 @@ test('startBridge reports a stale host as a protocol mismatch, not as connected'
   const stored = await fakeChrome.storage.local.get('bridgeState');
   assert.equal(stored.bridgeState.status, 'disconnected');
   assert.equal(stored.bridgeState.code, 'protocol-mismatch');
-  assert.match(stored.bridgeState.action, /install\.ps1/);
+  assert.match(stored.bridgeState.action, /官方发布页/);
   assert.equal(stored.bridgeState.requiresManualStart, true);
 });
 
@@ -314,4 +314,44 @@ test('a synchronous handler error still responds to the popup', async () => {
   const listener = await loadServiceWorker(fakeChrome);
   const response = await send(listener, {type: 'openTaskDirectory', taskId: null});
   assert.equal(response.ok, false);
+});
+
+test('missing Host does not block scanning or automatically reconnect until explicit retry', async () => {
+  const fakeChrome = createFakeChrome();
+  let attempts = 0;
+  const connect = fakeChrome.runtime.connectNative;
+  fakeChrome.runtime.connectNative = () => { attempts += 1; throw new Error('Specified native messaging host not found.'); };
+  const listener = await loadServiceWorker(fakeChrome);
+  const initial = await send(listener, {type:'ensureBridge'});
+  assert.equal(initial.result.state.availability, 'not-installed');
+  assert.equal((await send(listener, {type:'scan'})).ok, true);
+  await send(listener, {type:'ensureBridge'});
+  assert.equal(attempts, 1);
+  fakeChrome.runtime.connectNative = connect;
+  assert.equal((await send(listener, {type:'startBridge'})).result.state.availability, 'ready');
+});
+
+test('startup timeout is bounded and late handshakes cannot mark the Host ready', async (t) => {
+  const fakeChrome = createFakeChrome({droppedTypes:new Set(['ping'])});
+  const listener = await loadServiceWorker(fakeChrome);
+  t.mock.timers.enable({apis:['setTimeout']});
+  const pending = send(listener, {type:'startBridge'}, 10000);
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+  t.mock.timers.tick(8000);
+  const result = await pending;
+  assert.equal(result.result.connected, false);
+  assert.equal(result.result.state.availability, 'failed');
+  assert.deepEqual(fakeChrome.__connectionCounts(), {connections:1,disconnections:1});
+});
+
+test('synchronous launch failures exhaust a bounded retry budget', async (t) => {
+  const fakeChrome = createFakeChrome();
+  let attempts = 0;
+  fakeChrome.runtime.connectNative = () => { attempts += 1; throw new Error('Failed to start native messaging host.'); };
+  const listener = await loadServiceWorker(fakeChrome);
+  t.mock.timers.enable({apis:['setTimeout']});
+  await send(listener, {type:'ensureBridge'});
+  for (let i = 0; i < 10; i++) await send(listener, {type:'ensureBridge'});
+  assert.equal(attempts, 4);
+  assert.equal((await send(listener, {type:'bridgeState'})).result.state.availability, 'failed');
 });

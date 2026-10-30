@@ -16,7 +16,7 @@ async function createPopup(duplicate, videoId = 'video-42') {
     }
   }
   source = source.replace(/import\s*\{[^}]+\}\s*from\s*'[^']+';/g, '')
-    .replace(/initSettings\(\);\s*refreshBridgeState\(\);\s*refreshTasks\(\);\s*$/, '');
+    .replace(/^initSettings\(\);$/m, '').replace(/^refreshBridgeState\(\);$/m, '');
   const nodes = new Map();
   const node = (selector) => {
     if (!nodes.has(selector)) nodes.set(selector, {
@@ -48,6 +48,7 @@ async function createPopup(duplicate, videoId = 'video-42') {
   });
   vm.runInContext(source, context, { filename: sourceUrl.pathname });
   vm.runInContext(`
+    hostReady = true;
     candidates.set('candidate-0', {
       url: 'https://media.example/video.mp4',
       pageUrl: 'https://page.example/watch', type: 'mp4', videoId: ${JSON.stringify(videoId)}
@@ -67,6 +68,14 @@ test('a negative duplicate check submits a valid download instead of skipping it
   assert.equal(submitted.task.pageUrl, 'https://page.example/watch');
   assert.equal(submitted.task.videoId, 'video-42');
   assert.match(popup.notice.textContent, /已加入下载队列（1 项）/);
+});
+
+test('missing Host offers installation before any download or cookie operation', async () => {
+  const popup = await createPopup({duplicate:false});
+  vm.runInContext('hostReady = false', popup.context);
+  await vm.runInContext('downloadSelected()', popup.context);
+  assert.equal(popup.messages.length, 0);
+  assert.match(popup.notice.textContent, /安装本机下载组件/);
 });
 
 test('a real duplicate is skipped and displays the existing filename', async () => {

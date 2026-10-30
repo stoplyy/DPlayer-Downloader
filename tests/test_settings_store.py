@@ -28,11 +28,22 @@ class SettingsStoreTests(unittest.TestCase):
             self.assertEqual(store.get()["downloadDirectory"], str(custom))
             self.assertTrue(custom.is_dir())
 
-    def test_rejects_empty_relative_and_control_character_paths(self):
+    def test_empty_directory_restores_the_default_output_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            default = Path(directory) / "default"
+            store = SettingsStore(Path(directory) / "state", default)
+            store.set_download_directory(str(Path(directory) / "custom"))
+
+            updated = store.set_download_directory("   ")
+
+            self.assertEqual(updated["downloadDirectory"], str(default))
+            self.assertEqual(store.get()["downloadDirectory"], str(default))
+
+    def test_rejects_relative_and_control_character_paths(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SettingsStore(Path(directory) / "state", Path(directory) / "default")
 
-            for value in ("", "   ", "relative\\path", "D:\\bad\x00path"):
+            for value in ("relative\\path", "D:\\bad\x00path"):
                 with self.subTest(value=value), self.assertRaises(ValueError):
                     store.set_download_directory(value)
 

@@ -1,19 +1,19 @@
-# Edge HLS 视频下载器设计说明
+# Edge / Chrome 视频下载器设计说明
 
 ## 状态
 
-待用户审阅。本文仅定义设计，不代表已开始实现或验证下载兼容性。
+发布架构已更新为双商店扩展 + 独立当前用户 Host 安装器；发布前验证见 release-checklist.md。
 
 ## 目标
 
-交付一个 Windows 安装包，包含 Edge Manifest V3 扩展、本机 Native Messaging 桥接程序、yt-dlp 和 ffmpeg。扩展能识别当前标签页可见/已加载的媒体候选，供用户勾选并下载；HLS 任务应能在网络中断或 Edge 重启后恢复已完成片段，并封装为 MP4。
+一期完整下载仅支持 Windows 10/11 x64，并通过 Edge / Chrome 120+ 商店扩展 ZIP 与 Windows x64 Inno Setup 安装器分发本机 Native Messaging Host、yt-dlp 和 FFmpeg。扩展能识别当前标签页可见/已加载的媒体候选。在 macOS、Linux、ChromeOS 上，扩展如可安装则仅支持扫描、显示可用预览与候选选择，不提供下载、大小探测或本机任务管理；Windows ARM64 和 32 位 Windows 不属于支持目标。Windows 上的用户可勾选并下载；HLS 任务应能在网络中断或 Edge 重启后恢复已完成片段，并封装为 MP4。
 
 只处理用户有权下载且未受 DRM 保护的媒体。不绕过访问控制、付费墙或 DRM。
 
 ## 非目标
 
 - 不保证识别任意网站、任意播放器或加密/DRM 流。
-- 不承诺普通个人版 Edge 可由安装器静默安装扩展。首次安装需用户在 Edge 扩展管理页开启开发人员模式并加载已打包目录；企业策略/商店分发另行考虑。
+- 不由 Host 安装器安装或操纵浏览器扩展。普通用户从对应商店安装；开发者模式仅用于开发测试。
 - 不安装 Windows service。Native Host 为每个已确认任务启动本机 worker；Native Messaging 连接断开（包括 Edge 关闭）时停止 worker 并保留续传状态，重新打开 Edge 后由用户确认恢复。
 - 不在日志、任务列表或诊断信息中输出完整签名 URL 或 Cookie。
 
@@ -32,15 +32,16 @@
 - Manifest V3；弹窗采用已选定的 A「资源清单」视觉布局。
 - Service worker 负责当前 tab 生命周期、媒体候选汇总、Native Messaging 生命周期和任务事件路由。弹窗关闭不应取消任务；后台保持 Native Messaging 连接并定期交换心跳，连接断开时任务中断并持久化续传状态。若 MV3 service worker 被系统回收，扩展重连并由用户恢复任务。
 - Content script 只在用户触发扫描时检查 DOM 中的 `<video>`、`<source>` 和播放器配置；扩展可选地监听当前 tab 的媒体请求元数据，以捕捉页面发起的 HLS 请求。
-- 使用最小权限；基础权限限于 `activeTab`、`scripting`、`nativeMessaging`。用户明确勾选某任务的登录态后，才在用户手势下请求 `cookies` 与覆盖该媒体主机的可选 host permission；权限请求被拒绝时取消该任务的登录态模式并解释原因，不自动改用其他 Cookie 来源。需要读取 CDN/重定向主机 Cookie 时按主机逐个征求授权，不扩大为全站常驻权限。
+- 使用最小权限；基础权限为 `activeTab`、`scripting`、`nativeMessaging`，`storage` 保存设置/连接状态，`alarms` 用于有限重试。用户明确勾选某任务的登录态后，才在用户手势下请求 `cookies` 与覆盖该媒体主机的可选 host permission；权限请求被拒绝时取消该任务的登录态模式并解释原因，不自动改用其他 Cookie 来源。需要读取 CDN/重定向主机 Cookie 时按主机逐个征求授权，不扩大为全站常驻权限。
 - 不尝试直接读取跨域页面内存，不执行页面注入代码去绕过站点访问控制。
 
 ### Native Messaging 桥接
 
 - 一个小型本机可执行程序作为 Native Messaging Host，通过 stdin/stdout 的长度前缀 JSON 协议与扩展通信；stdout 只输出协议消息，诊断日志写入 stderr/本地轮转日志。
 - 校验消息 schema、大小、任务状态转换和允许的 HTTP(S) URL；不调用 shell 拼接命令。下载器以参数数组启动。收到任务后先原子写入持久任务记录，再启动 worker；Host 与 Edge 断连时向 worker 发出停止信号，保存 yt-dlp 中间状态并标记 interrupted。重连时扩展按 task ID 查询状态，用户确认后再恢复。
-- Native Host 注册表项限定当前 Windows 用户；`allowed_origins` 限定固定扩展 ID。扩展包使用固定公钥/ID，避免安装路径导致 ID 漂移。
-- Windows 安装器一次性安装扩展目录、桥接程序及依赖，并写入/卸载 Native Messaging 注册项。首次打开 Edge 扩展管理页指导用户手动加载扩展目录。
+- Native Host 在 HKCU 注册 Edge 与 Chrome，allowed_origins 精确包含两个商店确认的 ID。开发公钥仅保留于源码，商店包不带 key；不从公钥推定商店 ID。共用任务存储由跨进程锁限制为一个 Host 会话。
+- Windows Inno Setup 安装器仅安装 Host、依赖、许可和对应源码，写入/卸载 HKCU 注册；扩展内提供安装/更新链接与重试。无组件仍可扫描。
+- 一期平台边界：只有 Windows 10/11 x64 提供完整下载功能。非 Windows 平台的扩展使用仅限扫描和候选选择，不得宣传为可下载；ARM64 与 32 位 Windows 不在支持范围。
 
 ### 下载引擎
 
@@ -77,10 +78,11 @@ Native Messaging 断连、Edge 关闭、Windows 关机或 worker 崩溃后任务
 
 ## 安装与分发
 
-- 采用单一 Windows 安装器，内含扩展、Native Host、yt-dlp、ffmpeg、第三方许可证/NOTICE 和卸载器。
-- 安装器注册 Native Messaging Host 的当前用户注册表项，配置固定扩展 ID；卸载时移除注册项和程序文件，但默认保留已下载视频及任务数据，提供显式清理选项。
-- 安装完成后打开 Edge 扩展管理页，给出加载 unpacked extension 的本地目录和步骤；不声称扩展已自动启用。
-- 在选定具体 yt-dlp、ffmpeg 构建与安装技术后，核查再分发许可证、版本、哈希和更新策略；更新依赖需随新安装包明确发布。
+- 两个独立商店 ZIP 共用扩展源码；Host 使用 per-user Inno Setup，PrivilegesRequired=lowest。扩展与 Host 可独立版本升级，以协议与最低 Host 版本握手。
+- release/config.json 是发布元数据唯一来源，派生运行时常量必须同步检查。商店 ID、发布者和证书指纹由维护者发布时填写，私钥留在 Windows 证书存储。
+- 安装、修复和升级保留数据；下载运行中拒绝覆盖，停止本目录空闲 Host 后替换程序。卸载通过 Windows Installed apps，默认保留下载/任务/设置。显式数据清理步骤见 installation.md。
+- 正式构建检查二进制/源码哈希、许可证审查、所有分发 exe 和卸载器的签名；开发包显著标记且不进入 release 目录。没有自动下载/执行安装器、Windows 服务或自动更新服务。
+- 隐私与权限说明、商店资料、干净 Windows 验收见 privacy-policy.md、store-listing.md、release-checklist.md。
 
 ## 测试与验收
 
@@ -89,7 +91,7 @@ Native Messaging 断连、Edge 关闭、Windows 关机或 worker 崩溃后任务
 3. 验证 Native Messaging framing、schema 限制、扩展 ID 校验、关闭弹窗后任务继续、连接断开/Edge 关闭时 worker 停止并保留状态、Edge 重启后的用户确认恢复及系统重启后任务恢复。
 4. 验证登录态默认关闭；无用户手势不能请求权限；仅当前获准主机的 Cookie 被读取；权限拒绝、CDN 跨域和分区 Cookie 不可用时明确失败；Cookie 不进入日志/持久任务文件/进程参数，并测试临时凭据清理。
 5. 用本地 DNS/HTTP fixtures 验证初始 URL、重定向、m3u8 子清单、分片及下载器探测请求对 loopback/private IP 的拒绝，并测试 DNS rebinding 防护；模拟受限网络层不可用或覆盖不完整时，确认 yt-dlp 未被启动且任务明确失败。
-6. 在干净 Windows 用户环境验证单安装包安装、HKCU Native Host 注册契约、手动加载扩展、扩展 ID 配对、升级、卸载和保留/清理行为。
+6. 在干净 Windows 标准用户环境分别验证两个商店扩展、Host 安装/HKCU 双注册、正式 ID 配对、修复/升级/卸载和数据保留。
 7. 锁定 yt-dlp/ffmpeg 具体构建后核实版本、哈希和再分发许可证/NOTICE；许可证核验未通过不得发布安装包。
 8. 全程使用本地模拟服务器，不向用户提供的真实媒体地址发请求，不触发外部副作用。
 
@@ -98,5 +100,5 @@ Native Messaging 断连、Edge 关闭、Windows 关机或 worker 崩溃后任务
 - 扩展界面采用 A「资源清单」。
 - 采用本机桥接，目标为 HLS 片段级续传和 MP4 封装。
 - 桥接及运行依赖随同一个 Windows 安装包交付。
-- 首次安装可接受在 Edge 手动加载扩展。
+- 正式用户从 Edge / Chrome 商店安装扩展，需下载时安装本机组件。
 - 支持用户按任务显式授权使用当前 Edge 登录态；默认不启用。

@@ -2,6 +2,8 @@ import json
 import struct
 import sys
 import threading
+from host.release_version import HOST_VERSION
+from host.instance_lock import host_session_lock
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
 
@@ -132,7 +134,7 @@ def validate_message(message):
     return message
 
 
-def main():
+def run_host():
     source = sys.stdin.buffer
     destination = sys.stdout.buffer
     write_lock = threading.Lock()
@@ -163,7 +165,7 @@ def main():
                     probe_workers.submit(run_probe, request_id, message["url"])
                     continue
                 if message["type"] == "ping":
-                    response = {"type": "pong", "protocolVersion": PROTOCOL_VERSION}
+                    response = {"type": "pong", "protocolVersion": PROTOCOL_VERSION, "hostVersion": HOST_VERSION}
                 elif message["type"] == "list":
                     response = {"type": "tasks", "tasks": service.list_tasks()}
                 elif message["type"] == "start":
@@ -202,6 +204,24 @@ def main():
                 send({"type": "error", "replyTo": request_id, "error": "Local task operation failed"})
         # Stop downloads promptly on EOF, before waiting for size probes.
         service.close()
+
+
+def main():
+    with host_session_lock() as acquired:
+        if acquired:
+            run_host()
+        else:
+            # Wait for ping so the browser gets a correlated, actionable error.
+            try:
+                message = decode_message(sys.stdin.buffer)
+                if message:
+                    sys.stdout.buffer.write(encode_message({
+                        "type": "error", "replyTo": message.get("id"),
+                        "error": "host-in-use",
+                    }))
+                    sys.stdout.buffer.flush()
+            except (EOFError, ValueError, OSError):
+                pass
 
 
 if __name__ == "__main__":

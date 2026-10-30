@@ -3,10 +3,16 @@ import json
 import struct
 import threading
 import unittest
+from contextlib import contextmanager
 from unittest.mock import patch
 
 from host.native_host import MAX_MESSAGE_BYTES, decode_message, encode_message, main, validate_message
 from host.protocol_version import PROTOCOL_VERSION
+
+
+@contextmanager
+def acquired_host_session():
+    yield True
 
 
 class NativeMessagingTests(unittest.TestCase):
@@ -19,7 +25,8 @@ class NativeMessagingTests(unittest.TestCase):
             {"type": "ping", "id": "after-errors"},
         ])
         output = io.BytesIO()
-        with patch("host.native_host.TaskService", return_value=service), \
+        with patch("host.native_host.host_session_lock", acquired_host_session), \
+             patch("host.native_host.TaskService", return_value=service), \
              patch("host.native_host.sys.stdin", type("Input", (), {"buffer": io.BytesIO(requests)})()), \
              patch("host.native_host.sys.stdout", type("Output", (), {"buffer": output})()):
             main()
@@ -49,7 +56,8 @@ class NativeMessagingTests(unittest.TestCase):
         output = io.BytesIO()
         service = FakeService(None)
 
-        with patch("host.native_host.TaskService", return_value=service), \
+        with patch("host.native_host.host_session_lock", acquired_host_session), \
+             patch("host.native_host.TaskService", return_value=service), \
              patch("host.native_host.sys.stdin", type("Input", (), {"buffer": io.BytesIO(requests)})()), \
              patch("host.native_host.sys.stdout", type("Output", (), {"buffer": output})()):
             main()
@@ -171,7 +179,8 @@ class NativeMessagingTests(unittest.TestCase):
         ))
         output = io.BytesIO()
 
-        with patch("host.native_host.TaskService", return_value=service), \
+        with patch("host.native_host.host_session_lock", acquired_host_session), \
+             patch("host.native_host.TaskService", return_value=service), \
                patch("host.native_host.probe_size", side_effect=fake_probe_size), \
              patch("host.native_host.sys.stdin", type("Input", (), {"buffer": io.BytesIO(requests)})()), \
              patch("host.native_host.sys.stdout", type("Output", (), {"buffer": output})()):
@@ -201,7 +210,8 @@ class NativeMessagingTests(unittest.TestCase):
         output = io.BytesIO()
         truncated_input = io.BytesIO((5).to_bytes(4, "little") + b"{}")
 
-        with patch("host.native_host.TaskService", return_value=service), \
+        with patch("host.native_host.host_session_lock", acquired_host_session), \
+             patch("host.native_host.TaskService", return_value=service), \
              patch("host.native_host.sys.stdin", type("Input", (), {"buffer": truncated_input})()), \
              patch("host.native_host.sys.stdout", type("Output", (), {"buffer": output})()):
             main()

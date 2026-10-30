@@ -12,5 +12,11 @@
     "sourceCommit": "38b88335f9",
     "sourceArchiveSha256": "",
     "licenseFile": "licenses/ffmpeg-GPL-3.0.txt"
+  },
+  "redistributionReview": {
+    "approved": false,
+    "reviewedBy": "",
+    "reviewedAt": "",
+    "materials": []
   }
 }

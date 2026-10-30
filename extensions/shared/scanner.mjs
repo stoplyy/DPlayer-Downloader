@@ -34,13 +34,17 @@ export function scanDocument(doc = globalThis.document, pageUrl = globalThis.loc
   const ids = new Set([...doc.querySelectorAll(ownerSelector)].map(readId).filter(Boolean));
   const videoId = ids.size === 1 ? [...ids][0] : null;
   const candidates = [];
-  const add = (url, source, id = videoId) => {
-    if (typeof url === 'string' && /^https?:\/\//i.test(url)) candidates.push({ url, source, videoId: id });
+  const add = (url, source, id = videoId, thumbnailUrl = null) => {
+    if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
+      candidates.push({ url, source, videoId: id, ...(thumbnailUrl ? { thumbnailUrl } : {}) });
+    }
   };
   for (const element of doc.querySelectorAll('video, source')) {
+    const video = element.matches('video') ? element : element.closest('video');
     const id = readId(element.closest(ownerSelector)) || videoId;
-    add(element.currentSrc, 'video', id);
-    add(element.src, 'source', id);
+    const thumbnailUrl = video?.poster || null;
+    add(element.currentSrc, 'video', id, thumbnailUrl);
+    add(element.src, 'source', id, thumbnailUrl);
   }
   for (const element of doc.querySelectorAll('[data-config]')) {
     const value = element.getAttribute('data-config');
@@ -81,6 +85,7 @@ export function normalizeCandidates(rawCandidates) {
     const existing = candidatesByUrl.get(parsedUrl.href);
     if (existing) {
       if (!existing.videoId && candidate.videoId) existing.videoId = candidate.videoId;
+      if (!existing.thumbnailUrl && candidate.thumbnailUrl) existing.thumbnailUrl = candidate.thumbnailUrl;
       if (candidate.source && !existing.sources.includes(candidate.source)) {
         existing.sources.push(candidate.source);
       }
@@ -91,11 +96,20 @@ export function normalizeCandidates(rawCandidates) {
     displayUrl.search = '';
     displayUrl.hash = '';
 
+    let thumbnailUrl = null;
+    if (typeof candidate.thumbnailUrl === 'string') {
+      try {
+        const parsedThumbnail = new URL(candidate.thumbnailUrl);
+        if (['http:', 'https:'].includes(parsedThumbnail.protocol)) thumbnailUrl = parsedThumbnail.href;
+      } catch { /* Ignore invalid page-provided thumbnails. */ }
+    }
+
     candidatesByUrl.set(parsedUrl.href, {
       url: parsedUrl.href,
       displayUrl: displayUrl.href,
       type: MEDIA_TYPES.get(extension),
       ...(candidate.videoId ? { videoId: candidate.videoId } : {}),
+      ...(thumbnailUrl ? { thumbnailUrl } : {}),
       sources: candidate.source ? [candidate.source] : [],
     });
   }

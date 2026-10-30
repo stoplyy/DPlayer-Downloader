@@ -1,123 +1,84 @@
+#requires -Version 7.0
+<# Builds a signed per-user Host installer; never installs or publishes it.
+   Requires PowerShell 7, Python 3.12 x64, PyInstaller 6.20.0, Inno Setup 6. #>
 param(
     [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
-    [string]$OutputZip = (Join-Path (Join-Path $ProjectRoot 'dist') 'frame-video-downloader-windows-x64.zip')
+    [string]$Iscc = 'ISCC.exe',
+    [string]$SignTool = 'signtool.exe'
 )
-
 $ErrorActionPreference = 'Stop'
-$Vendor = Join-Path $ProjectRoot 'vendor'
-$ApprovalPath = Join-Path $Vendor 'approved-licenses.json'
-$Stage = Join-Path $ProjectRoot '.build'
-$Package = Join-Path $Stage 'package'
-$SourceArchive = Join-Path $Vendor 'ffmpeg-source.tar.xz'
-
-function Assert-File([string]$Path, [string]$Description) {
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        throw "Release input is missing: $Description ($Path)"
-    }
-}
-
-function Assert-Sha256([string]$Path, [string]$Expected, [string]$Description) {
-    if ($Expected -notmatch '^[A-Fa-f0-9]{64}$') {
-        throw "No reviewed SHA-256 is pinned for $Description. Release build refused."
-    }
-    $Actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
-    if ($Actual -ne $Expected.ToUpperInvariant()) {
-        throw "SHA-256 mismatch for $Description. Expected $Expected, got $Actual."
-    }
-}
-
-Assert-File $ApprovalPath 'approved dependency manifest'
-$Approval = Get-Content -LiteralPath $ApprovalPath -Raw | ConvertFrom-Json
-$YtDlp = Join-Path $Vendor 'yt-dlp.exe'
-$YtDlpSource = Join-Path $Vendor 'yt-dlp-source.tar.gz'
-$Ffmpeg = Join-Path $Vendor 'ffmpeg.exe'
-$Ffprobe = Join-Path $Vendor 'ffprobe.exe'
-$YtLicense = Join-Path $Vendor $Approval.ytDlp.licenseFile
-$FfmpegLicense = Join-Path $Vendor $Approval.ffmpeg.licenseFile
-$ThirdPartyNotices = Join-Path $Vendor 'licenses/THIRD-PARTY-NOTICES.txt'
-
-Assert-File $YtDlp 'yt-dlp executable'
-Assert-File $YtDlpSource 'corresponding yt-dlp source archive'
-Assert-File $Ffmpeg 'ffmpeg executable'
-Assert-File $Ffprobe 'ffprobe executable'
-Assert-File $SourceArchive 'corresponding FFmpeg source archive'
-Assert-File $YtLicense 'yt-dlp license text'
-Assert-File $FfmpegLicense 'FFmpeg GPL license text'
-Assert-File $ThirdPartyNotices 'third-party notices for all bundled components'
-
-Assert-Sha256 $YtDlp $Approval.ytDlp.sha256 'yt-dlp'
-Assert-Sha256 $YtDlpSource $Approval.ytDlp.sourceArchiveSha256 'yt-dlp source archive'
-Assert-Sha256 $Ffmpeg $Approval.ffmpeg.sha256 'ffmpeg'
-Assert-Sha256 $Ffprobe $Approval.ffmpeg.ffprobeSha256 'ffprobe'
-Assert-Sha256 $SourceArchive $Approval.ffmpeg.sourceArchiveSha256 'FFmpeg source archive'
-
-$YtVersion = (& $YtDlp --version).Trim()
-if ($LASTEXITCODE -ne 0 -or $YtVersion -ne $Approval.ytDlp.version) {
-    throw "yt-dlp version mismatch: expected $($Approval.ytDlp.version), got $YtVersion."
-}
-$FfmpegVersion = (& $Ffmpeg -version | Select-Object -First 1).Trim()
-if ($FfmpegVersion -notmatch [regex]::Escape($Approval.ffmpeg.version)) {
-    throw "ffmpeg version mismatch: expected $($Approval.ffmpeg.version), got $FfmpegVersion."
-}
-
-$PyInstaller = & python -c "import PyInstaller; print(PyInstaller.__version__)" 2>$null
-if ($LASTEXITCODE -ne 0 -or $PyInstaller -ne '6.20.0') {
-    throw "PyInstaller 6.20.0 is required; found '$PyInstaller'."
-}
-
-$Extension = Join-Path $ProjectRoot 'extensions/edge'
-foreach ($Required in @('manifest.json', 'popup.html', 'popup.css', 'popup.js', 'service_worker.js', 'scanner.mjs', 'cookie_authorization.mjs', 'task_actions.mjs', 'size_display.mjs', 'probe_queue.mjs', 'settings.mjs', 'bridge_status.mjs', 'media_identity.mjs')) {
-    Assert-File (Join-Path $Extension $Required) "extensions/edge/$Required"
-}
-
-& node (Join-Path $Extension 'sync-shared.mjs') --check
-if ($LASTEXITCODE -ne 0) {
-    throw 'extensions/edge contains out-of-date copies of extensions/shared. Run: node extensions/edge/sync-shared.mjs'
-}
-Assert-File (Join-Path $PSScriptRoot 'native-host-manifest.template.json') 'Native Messaging manifest template'
-Assert-File (Join-Path $PSScriptRoot 'install.ps1') 'installer script'
-Assert-File (Join-Path $PSScriptRoot 'uninstall.ps1') 'uninstaller script'
-Assert-File (Join-Path $ProjectRoot 'README.md') 'release README'
-
-if (Test-Path $Stage) { Remove-Item $Stage -Recurse -Force }
-New-Item -ItemType Directory -Force -Path $Package, (Join-Path $Package 'tools'), (Join-Path $Package 'licenses') | Out-Null
+Set-StrictMode -Version Latest
 Push-Location $ProjectRoot
 try {
-    & python -m PyInstaller --noconfirm --clean --onefile --name native-host --distpath $Package --workpath (Join-Path $Stage 'work') --specpath (Join-Path $Stage 'spec') --paths $ProjectRoot (Join-Path $ProjectRoot 'host/native_host.py')
-    if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed.' }
-} finally {
-    Pop-Location
-}
-
-Copy-Item $Extension (Join-Path $Package 'extension') -Recurse
-Copy-Item $YtDlp (Join-Path $Package 'tools/yt-dlp.exe')
-Copy-Item $Ffmpeg (Join-Path $Package 'tools/ffmpeg.exe')
-Copy-Item $Ffprobe (Join-Path $Package 'tools/ffprobe.exe')
-Copy-Item $YtLicense (Join-Path $Package 'licenses/yt-dlp.txt')
-Copy-Item $FfmpegLicense (Join-Path $Package 'licenses/ffmpeg-GPL-3.0.txt')
-Copy-Item $ThirdPartyNotices (Join-Path $Package 'licenses/THIRD-PARTY-NOTICES.txt')
-Copy-Item $SourceArchive (Join-Path $Package 'licenses/ffmpeg-source.tar.xz')
-Copy-Item $YtDlpSource (Join-Path $Package 'licenses/yt-dlp-source.tar.gz')
-Copy-Item (Join-Path $PSScriptRoot 'native-host-manifest.template.json'), (Join-Path $PSScriptRoot 'install.ps1'), (Join-Path $PSScriptRoot 'uninstall.ps1'), (Join-Path $ProjectRoot 'README.md') -Destination $Package
-
-$RequiredPackageFiles = @(
-    'native-host.exe',
-    'tools/yt-dlp.exe',
-    'tools/ffmpeg.exe',
-    'tools/ffprobe.exe',
-    'licenses/yt-dlp.txt',
-    'licenses/ffmpeg-GPL-3.0.txt',
-    'licenses/THIRD-PARTY-NOTICES.txt',
-    'licenses/ffmpeg-source.tar.xz',
-    'licenses/yt-dlp-source.tar.gz'
-)
-foreach ($RelativePath in $RequiredPackageFiles) {
-    Assert-File (Join-Path $Package $RelativePath) "staged package/$RelativePath"
-}
-
-$OutputDirectory = Split-Path -Parent $OutputZip
-New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
-if (Test-Path $OutputZip) { Remove-Item $OutputZip -Force }
-Compress-Archive -Path (Join-Path $Package '*') -DestinationPath $OutputZip -CompressionLevel Optimal
-Assert-File $OutputZip 'built ZIP package'
-Write-Host "Built release package: $OutputZip"
+    & python -m tools.build_release preflight --target host
+    if ($LASTEXITCODE -ne 0) { throw 'Release inputs incomplete. See release/config.json and vendor/README.md.' }
+    $Config = Get-Content -LiteralPath 'release/config.json' -Raw | ConvertFrom-Json
+    $Approval = Get-Content -LiteralPath 'vendor/approved-licenses.json' -Raw | ConvertFrom-Json
+    $Iscc = (Get-Command $Iscc -ErrorAction Stop).Source
+    $InstallerSignature = Get-AuthenticodeSignature -LiteralPath $Iscc
+    if ($InstallerSignature.Status -ne 'Valid' -or $InstallerSignature.SignerCertificate.Subject -notlike '*Pyrsys B.V.*') { throw 'Inno Setup compiler must have the verified upstream publisher signature.' }
+    $CompilerHelp = (& $Iscc '/?' 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0 -or $CompilerHelp -notmatch 'Inno Setup 6 Command-Line Compiler') { throw 'The reviewed Inno Setup 6 compiler could not be verified.' }
+    $SignTool = (Get-Command $SignTool -ErrorAction Stop).Source
+    $Certificate = Get-Item -LiteralPath "Cert:\CurrentUser\My\$($Config.signingCertificateThumbprint)"
+    if (-not $Certificate.HasPrivateKey -or $Certificate.NotAfter -le (Get-Date)) { throw 'Valid code-signing private key required.' }
+    $CertPublisher = $Certificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+    if ($CertPublisher -ne $Config.publisher) { throw "Publisher must match certificate: $CertPublisher" }
+    $Runtime = (& python -c "import platform,struct,PyInstaller; print(platform.python_version()+'|'+str(struct.calcsize('P')*8)+'|'+PyInstaller.__version__)").Trim()
+    if ($LASTEXITCODE -ne 0 -or $Runtime -notmatch '^3\.12\.\d+\|64\|6\.20\.0$') { throw "Requires Python 3.12 x64 / PyInstaller 6.20.0; found $Runtime" }
+    $YtVersion = (& .\vendor\yt-dlp.exe --version).Trim()
+    if ($LASTEXITCODE -ne 0 -or $YtVersion -ne $Approval.ytDlp.version) { throw 'yt-dlp version mismatch' }
+    foreach ($Tool in @('ffmpeg', 'ffprobe')) {
+        $Version = (& (Join-Path $ProjectRoot "vendor/$Tool.exe") -version | Select-Object -First 1)
+        if ($LASTEXITCODE -ne 0 -or $Version -notmatch [regex]::Escape($Approval.ffmpeg.version)) { throw "$Tool version mismatch" }
+    }
+    $Stage = Join-Path $ProjectRoot ('.build-host/' + [guid]::NewGuid().ToString('N'))
+    $Payload = Join-Path $Stage 'payload'
+    $Output = Join-Path $Stage 'output'
+    New-Item -ItemType Directory -Path $Payload, $Output, (Join-Path $Payload 'tools'), (Join-Path $Payload 'licenses') -Force | Out-Null
+    & python -m PyInstaller --noconfirm --clean --onefile --name native-host --distpath $Payload --workpath (Join-Path $Stage 'work') --specpath (Join-Path $Stage 'spec') --paths $ProjectRoot (Join-Path $ProjectRoot 'host/native_host.py')
+    if ($LASTEXITCODE -ne 0) { throw 'PyInstaller failed' }
+    foreach ($Tool in @('yt-dlp', 'ffmpeg', 'ffprobe')) {
+        Copy-Item -LiteralPath (Join-Path $ProjectRoot "vendor/$Tool.exe") -Destination (Join-Path $Payload "tools/$Tool.exe")
+    }
+    foreach ($Material in $Approval.redistributionReview.materials) {
+        $Destination = Join-Path $Payload $Material.path
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Destination) | Out-Null
+        Copy-Item -LiteralPath (Join-Path $ProjectRoot "vendor/$($Material.path)") -Destination $Destination
+    }
+    Copy-Item -LiteralPath 'vendor/ffmpeg-source.tar.xz', 'vendor/yt-dlp-source.tar.gz' -Destination (Join-Path $Payload 'licenses')
+    Copy-Item -LiteralPath 'docs/privacy-policy.md', 'docs/installation.md' -Destination $Payload
+    function Assert-Signed([string]$Path) {
+        $Signature = Get-AuthenticodeSignature -LiteralPath $Path
+        if ($Signature.Status -ne 'Valid' -or $Signature.SignerCertificate.Thumbprint -ne $Config.signingCertificateThumbprint -or -not $Signature.TimeStamperCertificate) { throw "Signature/timestamp validation failed: $Path" }
+    }
+    $Files = @()
+    foreach ($Executable in Get-ChildItem -LiteralPath $Payload -Filter '*.exe' -Recurse -File) {
+        $OriginalHash = (Get-FileHash -LiteralPath $Executable.FullName -Algorithm SHA256).Hash
+        & $SignTool sign /sha1 $Config.signingCertificateThumbprint /fd SHA256 /tr $Config.timestampUrl /td SHA256 $Executable.FullName
+        if ($LASTEXITCODE -ne 0) { throw "Signing failed: $($Executable.Name)" }
+        Assert-Signed $Executable.FullName
+        $Files += @{ path = [IO.Path]::GetRelativePath($Payload, $Executable.FullName); originalSha256 = $OriginalHash; sha256 = (Get-FileHash -LiteralPath $Executable.FullName -Algorithm SHA256).Hash; signature = 'valid'; signer = $Certificate.Thumbprint }
+    }
+    $Metadata = @{ product = $Config.productName; hostVersion = $Config.hostVersion; extensionVersion = $Config.extensionVersion; protocolVersion = $Config.protocolVersion; edgeExtensionId = $Config.edgeExtensionId; chromeExtensionId = $Config.chromeExtensionId; runtime = $Runtime; installerCompiler = @{ product = 'Inno Setup 6'; binarySha256 = (Get-FileHash -LiteralPath $Iscc -Algorithm SHA256).Hash }; dependencies = $Approval; files = $Files; sourceCommit = (& git rev-parse HEAD); sourceDirty = [bool](& git status --porcelain); builtAt = (Get-Date).ToUniversalTime().ToString('o') }
+    $Metadata | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $Payload 'release-manifest.json') -Encoding utf8
+    $Defines = @{
+        ProductName = $Config.productName; HostVersion = $Config.hostVersion; Publisher = $Config.publisher
+        HostName = $Config.nativeHostName; EdgeId = $Config.edgeExtensionId; ChromeId = $Config.chromeExtensionId
+        SupportUrl = $Config.supportUrl; ReleaseUrl = $Config.releaseUrl
+    }
+    $Include = Join-Path $Stage 'release.iss'
+    ($Defines.GetEnumerator() | ForEach-Object { '#define ' + $_.Key + ' "' + $_.Value + '"' }) | Set-Content -LiteralPath $Include -Encoding utf8
+    $SignCommand = '"' + $SignTool + '" sign /sha1 ' + $Config.signingCertificateThumbprint + ' /fd SHA256 /tr ' + $Config.timestampUrl + ' /td SHA256 $f'
+    & $Iscc "/DConfigInclude=$Include" "/DPayloadDir=$Payload" "/DOutputDir=$Output" "/Sframe=$SignCommand" (Join-Path $PSScriptRoot 'host.iss')
+    if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation/signing failed' }
+    $Installer = Get-Item -LiteralPath (Join-Path $Output "frame-video-downloader-host-$($Config.hostVersion)-windows-x64.exe")
+    Assert-Signed $Installer.FullName
+    $Metadata.installer = @{ file = $Installer.Name; sha256 = (Get-FileHash -LiteralPath $Installer.FullName -Algorithm SHA256).Hash; signature = 'valid'; publisher = $Config.publisher; signer = $Certificate.Thumbprint }
+    $Metadata | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $Output 'release-manifest.json') -Encoding utf8
+    $Destination = Join-Path $ProjectRoot "dist/release/host-$($Config.hostVersion)"
+    if (Test-Path -LiteralPath $Destination) { throw "Output already exists: $Destination. Review before rebuilding." }
+    New-Item -ItemType Directory -Path $Destination -Force | Out-Null
+    Copy-Item -LiteralPath $Installer.FullName, (Join-Path $Output 'release-manifest.json') -Destination $Destination
+    Write-Host "Signed installer built: $Destination. Perform clean-account acceptance before publication."
+} finally { Pop-Location }

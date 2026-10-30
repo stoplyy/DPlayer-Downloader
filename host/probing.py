@@ -12,8 +12,8 @@ from host.proxy import EgressProxy
 AVERAGE_BANDWIDTH_RE = re.compile(r"(?:^|,)AVERAGE-BANDWIDTH=(\d+)(?:,|$)")
 BANDWIDTH_RE = re.compile(r"(?:^|,)BANDWIDTH=(\d+)(?:,|$)")
 EXTINF_RE = re.compile(r"^#EXTINF:([0-9]+(?:\.[0-9]+)?)(?:,.*)?$")
-REQUEST_TIMEOUT_SECONDS = 3
-CANDIDATE_TIMEOUT_SECONDS = 8
+REQUEST_TIMEOUT_SECONDS = 6
+CANDIDATE_TIMEOUT_SECONDS = 20
 PLAYLIST_MAX_BYTES = 256 * 1024
 MAX_REDIRECTS = 3
 MAX_URL_LENGTH = 8192
@@ -44,6 +44,20 @@ def parse_content_length(headers):
     try:
         size = int(value)
     except (TypeError, ValueError):
+        return None
+    return size if size > 0 else None
+
+
+def parse_content_range_total(headers):
+    value = headers.get("Content-Range")
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(r"bytes\s+(?:\d+-\d+|\*)/(\d+)", value.strip(), re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        size = int(match.group(1))
+    except ValueError:
         return None
     return size if size > 0 else None
 
@@ -189,6 +203,64 @@ def _probe_hls(opener, url, deadline, clock):
     return {"status": "estimated", "sizeBytes": size}
 
 
+def _probe_progressive_size(opener, url, deadline, clock):
+    request = Request(url, method="HEAD", headers={"Accept": "*/*"})
+    try:
+        with opener.open(request, timeout=_request_timeout(deadline, clock)) as response:
+            size = parse_content_length(response.headers)
+            if size is not None:
+                return {"status": "exact", "sizeBytes": size}
+            size = parse_content_range_total(response.headers)
+            if size is not None:
+                return {"status": "exact", "sizeBytes": size}
+    except HTTPError as error:
+        size = parse_content_range_total(error.headers)
+        error.close()
+        if size is not None:
+            return {"status": "exact", "sizeBytes": size}
+    except (URLError, TimeoutError, socket.timeout):
+        # Some CDNs reject or stall HEAD while still supporting byte-range GET.
+        pass
+
+    saw_response = False
+    last_error = None
+    for byte_range in ("bytes=0-0", "bytes=0-1023"):
+        request = Request(
+            url,
+            method="GET",
+            headers={
+                "Accept": "*/*",
+                "Accept-Encoding": "identity",
+                "Range": byte_range,
+            },
+        )
+        try:
+            with opener.open(request, timeout=_request_timeout(deadline, clock)) as response:
+                saw_response = True
+                size = parse_content_range_total(response.headers)
+                if size is None and getattr(response, "status", None) == 200:
+                    # A server may ignore Range but still reveal the full size
+                    # in response headers. Close without reading the body.
+                    size = parse_content_length(response.headers)
+            if size is not None:
+                return {"status": "exact", "sizeBytes": size}
+        except HTTPError as error:
+            saw_response = True
+            size = parse_content_range_total(error.headers)
+            error.close()
+            if size is not None:
+                return {"status": "exact", "sizeBytes": size}
+            last_error = "Probe request failed"
+        except (TimeoutError, socket.timeout):
+            last_error = "Probe timed out"
+        except URLError as error:
+            last_error = "Probe timed out" if isinstance(error.reason, (TimeoutError, socket.timeout)) else "Probe request failed"
+
+    if saw_response:
+        return {"status": "unavailable"}
+    return {"status": "failed", "error": last_error or "Probe request failed"}
+
+
 def probe_size(url, proxy_factory=EgressProxy, opener_factory=None, clock=time.monotonic):
     try:
         parsed = _validate_probe_url(url)
@@ -209,12 +281,7 @@ def probe_size(url, proxy_factory=EgressProxy, opener_factory=None, clock=time.m
         if parsed.path.lower().endswith(".m3u8"):
             return _probe_hls(opener, url, deadline, clock)
 
-        request = Request(url, method="HEAD", headers={"Accept": "*/*"})
-        with opener.open(request, timeout=_request_timeout(deadline, clock)) as response:
-            size = parse_content_length(response.headers)
-        if size is None:
-            return {"status": "unavailable"}
-        return {"status": "exact", "sizeBytes": size}
+        return _probe_progressive_size(opener, url, deadline, clock)
     except _PlaylistTooLarge:
         return {"status": "unavailable"}
     except _ProbeTimedOut:

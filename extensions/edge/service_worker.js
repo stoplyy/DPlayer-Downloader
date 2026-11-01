@@ -6,6 +6,10 @@ import { taskActionMessage } from './task_actions.mjs';
 const HOST_NAME = RELEASE.nativeHostName;
 const BRIDGE_STATE_KEY = 'bridgeState';
 const RECONNECT_ALARM = 'frameBridgeReconnect';
+const HOST_INSTALL_ALARM = 'frameHostInstallCheck';
+const HOST_INSTALL_PENDING_KEY = 'hostInstallPending';
+const HOST_INSTALL_CHECK_INTERVAL_MINUTES = 0.5;
+const HOST_INSTALL_CHECK_TIMEOUT_MS = 10 * 60 * 1000;
 const RECONNECT_ALARM_MINUTES = 0.5;
 const ALIVE_TIMEOUT_MS = 8000;
 const pendingRequests = new Map();
@@ -21,7 +25,9 @@ function broadcastBridgeState(state) {
 }
 
 async function saveBridgeState(state) {
-  const next = { ...state, availability: hostAvailability(state), updatedAt: Date.now() };
+  const install = (await chrome.storage.local.get(HOST_INSTALL_PENDING_KEY))[HOST_INSTALL_PENDING_KEY];
+  const installPending = Boolean(install && Date.now() - install.startedAt < HOST_INSTALL_CHECK_TIMEOUT_MS);
+  const next = { ...state, installPending, availability: hostAvailability(state), updatedAt: Date.now() };
   await chrome.storage.local.set({ [BRIDGE_STATE_KEY]: next });
   broadcastBridgeState(next);
   return next;
@@ -110,10 +116,12 @@ async function performStartBridge({ automatic = false } = {}) {
   if (!automatic) await chrome.storage.local.set({ bridgeStopped: false });
   if (nativePort && bridgeReady) return { status: 'connected' };
   const previous = (await chrome.storage.local.get(BRIDGE_STATE_KEY))[BRIDGE_STATE_KEY];
-  if (automatic && ['not-installed', 'incompatible'].includes(previous?.availability)) return previous;
-  if (automatic) reconnectAttempt = Math.max(reconnectAttempt, previous?.attempts || 0);
+  const install = (await chrome.storage.local.get(HOST_INSTALL_PENDING_KEY))[HOST_INSTALL_PENDING_KEY];
+  const installPending = Boolean(install && Date.now() - install.startedAt < HOST_INSTALL_CHECK_TIMEOUT_MS);
+  if (automatic && ['not-installed', 'incompatible'].includes(previous?.availability) && !installPending) return previous;
+  if (automatic) reconnectAttempt = installPending ? 0 : Math.max(reconnectAttempt, previous?.attempts || 0);
   else reconnectAttempt = 0;
-  if (automatic && reconnectAttempt > RECONNECT_DELAYS_MS.length) return previous;
+  if (automatic && !installPending && reconnectAttempt > RECONNECT_DELAYS_MS.length) return previous;
   reconnectAttempt += 1;
   await saveBridgeState({
     status: 'connecting',
@@ -145,6 +153,8 @@ async function performStartBridge({ automatic = false } = {}) {
     }
     reconnectAttempt = 0;
     bridgeReady = true;
+    await chrome.storage.local.remove(HOST_INSTALL_PENDING_KEY);
+    chrome.alarms.clear(HOST_INSTALL_ALARM);
     return saveBridgeState({
       status: 'connected',
       message: '本机下载服务已连接',
@@ -229,6 +239,35 @@ async function stopBridge() {
   return saveBridgeState({ status: 'idle', message: '本机下载服务已停止', requiresManualStart: true });
 }
 
+async function watchHostInstall() {
+  await chrome.storage.local.set({
+    [HOST_INSTALL_PENDING_KEY]: { startedAt: Date.now() },
+    bridgeStopped: false,
+  });
+  chrome.alarms.create(HOST_INSTALL_ALARM, {
+    delayInMinutes: HOST_INSTALL_CHECK_INTERVAL_MINUTES,
+    periodInMinutes: HOST_INSTALL_CHECK_INTERVAL_MINUTES,
+  });
+  return startBridge({ automatic: true });
+}
+
+async function checkPendingHostInstall() {
+  const install = (await chrome.storage.local.get(HOST_INSTALL_PENDING_KEY))[HOST_INSTALL_PENDING_KEY];
+  if (!install) {
+    chrome.alarms.clear(HOST_INSTALL_ALARM);
+    return;
+  }
+  if (Date.now() - install.startedAt >= HOST_INSTALL_CHECK_TIMEOUT_MS) {
+    await chrome.storage.local.remove(HOST_INSTALL_PENDING_KEY);
+    chrome.alarms.clear(HOST_INSTALL_ALARM);
+    const current = await getBridgeState();
+    if (current.state) await saveBridgeState(current.state);
+    return;
+  }
+  reconnectAttempt = 0;
+  await startBridge({ automatic: true });
+}
+
 async function scanCurrentTab() {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   if (!tab?.id || !tab.url || !/^https?:\/\//i.test(tab.url)) {
@@ -265,6 +304,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }),
     bridgeState: () => getBridgeState(),
     ensureBridge: async () => { await startBridge({ automatic: true }); return getBridgeState(); },
+    watchHostInstall,
     startBridge: async () => { await startBridge({ automatic: false }); return getBridgeState(); },
     stopBridge: async () => { await stopBridge(); return getBridgeState(); },
   };
@@ -284,4 +324,5 @@ chrome.runtime.onStartup.addListener(() => { startBridge({ automatic: true }); }
 chrome.runtime.onInstalled.addListener(() => { startBridge({ automatic: true }); });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === RECONNECT_ALARM && !nativePort) startBridge({ automatic: true });
+  if (alarm.name === HOST_INSTALL_ALARM) checkPendingHostInstall();
 });

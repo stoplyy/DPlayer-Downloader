@@ -114,6 +114,17 @@ function renderBridgeState(state, connected) {
     ? t('hostDescriptionWindows') : t('hostDescriptionUnsupported');
   document.querySelector('#hostSetupSteps').hidden = !windows;
   document.querySelector('#installHostLink').hidden = !windows;
+  if (windows && state?.installPending && !isConnected) {
+    document.querySelector('#hostSetupTitle').textContent = t('hostInstallPendingTitle');
+    document.querySelector('#hostSetupDescription').textContent = t('hostInstallPendingDescription');
+    const steps = document.querySelectorAll('#hostSetupSteps li');
+    steps[0].textContent = t('hostInstallPendingStep1');
+    steps[1].textContent = t('hostInstallPendingStep2');
+  } else if (windows) {
+    const steps = document.querySelectorAll('#hostSetupSteps li');
+    steps[0].textContent = t('hostSetupStep1');
+    steps[1].textContent = t('hostSetupStep2');
+  }
 
   bridgeStatus.classList.toggle('connected', isConnected);
   bridgeStatus.classList.toggle('error', !isConnected && status === 'disconnected');
@@ -135,7 +146,9 @@ function renderBridgeState(state, connected) {
     'host-in-use': 'bridgeHostInUseAction',
   };
   const message = bridgeMessages[state?.code];
-  text.textContent = isConnected ? t('hostConnected') : message ? t(message[0], message[1] || []) : t('hostNotStarted');
+  text.textContent = isConnected ? t('hostConnected')
+    : state?.installPending ? t('hostInstallPendingTitle')
+      : message ? t(message[0], message[1] || []) : t('hostNotStarted');
 
   if (status === 'connecting') {
     actionButton.textContent = t('startingHost');
@@ -829,6 +842,11 @@ document.querySelector('#downloadButton').addEventListener('click', downloadSele
 document.querySelector('#refreshTasks').addEventListener('click', refreshTasks);
 document.querySelector('#refreshTasks2').addEventListener('click', refreshTasks);
 document.querySelector('#bridgeAction').addEventListener('click', startOrStopBridge);
+document.querySelector('#installHostLink').addEventListener('click', () => {
+  // Keep a bounded background check alive while the user downloads and runs
+  // the installer. Opening the extension again also resumes the same check.
+  chrome.runtime.sendMessage({ type: 'watchHostInstall' }).catch(() => {});
+});
 document.querySelector('#bridgeStatus').addEventListener('click', (event) => {
   if (event.target.closest('#bridgeAction')) return;
   showDiagnostics();
@@ -848,3 +866,5 @@ refreshBridgeState();
 for (const [selector, url] of [['#installHostLink', RELEASE.releaseUrl], ['#supportLink', RELEASE.supportUrl], ['#privacyLink', RELEASE.privacyUrl]]) {
   document.querySelector(selector).href = url;
 }
+const hostInstallerName = `frame-video-downloader-host-${RELEASE.hostVersion}-windows-x64.exe`;
+document.querySelector('#installHostLink').href = `${RELEASE.releaseUrl.replace(/\/+$/, '')}/download/v${RELEASE.extensionVersion}/${encodeURIComponent(hostInstallerName)}`;

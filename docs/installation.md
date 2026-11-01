@@ -1,22 +1,22 @@
 # 安装、更新与卸载
 
-**当前 Edge 首发版完整下载仅支持 Windows 10/11 x64 + Microsoft Edge 120+**（建议使用浏览器当前受支持版本）。当前 Host 仅注册 Edge 商店扩展；Chrome Web Store 版本发布后再增加 Chrome 支持。当前不提供 macOS、Linux、ChromeOS、Windows ARM64 或 32 位 Windows 下载 Host。下载引擎不支持 DRM；只处理你有权下载的媒体。
+**当前 Edge 首发版完整下载仅支持 Windows 10/11 x64 + Microsoft Edge 120+**（建议使用浏览器当前受支持版本）。Edge 扩展已在 Microsoft Edge Add-ons 上架，当前 Host 仅注册 Edge 商店扩展；Chrome Web Store 版本发布后再增加 Chrome 支持。当前不提供 macOS、Linux、ChromeOS、Windows ARM64 或 32 位 Windows 下载 Host。下载引擎不支持 DRM；只处理你有权下载的媒体。
 
 在 macOS、Linux 或 ChromeOS 上，若相应版本的 Edge/Chrome 商店允许安装，扩展可用于扫描当前页和选择候选资源；由于没有这些系统的本机 Host，下载、大小探测和本机任务管理不可用。仅安装扩展不等于安装下载器。
 
 ## 普通用户
 
-1. 在 [Microsoft Edge Add-ons 安装 Frame Video Downloader](https://microsoftedge.microsoft.com/addons/detail/0RDCKF2Z9NKQ)。Chrome Web Store 版本尚未发布；不要把开发 ZIP 当成商店版。
+1. 在 [Microsoft Edge Add-ons 安装 Frame Video Downloader](https://microsoftedge.microsoft.com/addons/detail/frame-video-downloader/eiengekfcedlijhhlgaalfmoicmchfcm)。可在商店搜索完整名称 **Frame Video Downloader**；若暂时搜不到，请使用直达链接。Chrome Web Store 版本尚未发布；不要把开发 ZIP 当成商店版。
 2. 点击扩展图标，选择“扫描此页”。无需本机组件即可扫描和勾选媒体。
-3. 下载时按弹窗中的“安装 / 更新本机组件”进入[官方 Releases](https://github.com/stoplyy/DPlayer-Downloader/releases)。下载 Windows x64 Host 安装器，核对版本、发布者签名和 SHA-256 后运行。
+3. 下载时按弹窗中的“下载安装 Windows 本机组件”直达 Windows x64 Host 安装器，核对版本、发布者签名和 SHA-256 后运行。
 4. 安装器将 Host、yt-dlp、FFmpeg/ffprobe、许可证及对应源码安装到 `%LOCALAPPDATA%\FrameVideoDownloader\app`，仅注册当前用户 Edge 的 Native Messaging。无需管理员权限、Python 或开发者模式。
-5. 回到扩展点击“重试连接”。只有协议与最低 Host 版本握手通过才会启用下载。默认不读取 Cookie；需要登录态时由你按任务选择并授权。
+5. 安装完成后，扩展会自动检测并连接 Host（最多等待 10 分钟）。只有协议与最低 Host 版本握手通过才会启用下载。默认不读取 Cookie；需要登录态时由你按任务选择并授权。
 
 ## 更新与排错
 
-扩展通过各自商店更新。本机组件通过同一官方发布页下载安装新版本；不运行后台自动更新服务。升级/同版本修复前暂停所有任务并停止扩展内的本机服务。安装器拒绝覆盖仍在下载的工具，仅停止本安装目录中的空闲 Host。重新连接后，中断任务由你确认恢复，不自动重新下载。
+扩展通过各自商店更新。本机组件通过扩展中的直达链接下载安装新版本；不运行后台自动更新服务。升级/同版本修复前暂停所有任务并停止扩展内的本机服务。安装器拒绝覆盖仍在下载的工具，仅停止本安装目录中的空闲 Host。重新连接后，中断任务由你确认恢复，不自动重新下载。
 
-- 未安装：安装 Host 后重试，扫描无需刷新。
+- 未安装：点击直达安装链接并运行 Host 安装器；扩展会自动检测连接，扫描无需刷新。
 - 不兼容：更新 Host；若 Host 协议更高，也需要更新商店扩展。
 - 启动失败：重试、同版本修复或查看浏览器/组织策略及安全软件限制。[支持入口](https://github.com/stoplyy/DPlayer-Downloader/issues)。诊断信息不要包含 Cookie 或完整签名 URL。
 - 两个浏览器使用同一份任务数据；同时只允许一个 Host 会话。先在另一浏览器点击“停止服务”，再在本浏览器重试。

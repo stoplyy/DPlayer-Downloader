@@ -1,6 +1,6 @@
 # Edge / Chrome 商店提交材料
 
-状态：源码与开发包可测试，正式 ID、签名、依赖审查及干净账户验收待发布者完成。不能把本文件理解为已通过商店认证。
+状态：Microsoft Edge Add-ons 上架版本为 0.2.1；Chrome Web Store 尚未发布。以下仍保留商店资料和审核复现信息，供维护者核对及后续商店使用。
 
 ## 公共信息
 
@@ -11,11 +11,17 @@
 - 单一用途：用户主动扫描当前页、选择媒体并在自己的 Windows 设备上下载和管理任务。
 - 支持/隐私/发布页：以 `release/config.json` 为准，提交前确认未登录也可访问。Edge listing 主要面向 Edge，Chrome listing 主要面向 Chrome。
 
+## 已发布商店
+
+- Microsoft Edge Add-ons： [Frame Video Downloader](https://microsoftedge.microsoft.com/addons/detail/frame-video-downloader/eiengekfcedlijhhlgaalfmoicmchfcm)（版本 0.2.1，Edge 扩展 ID：`eiengekfcedlijhhlgaalfmoicmchfcm`，Store ID：`0RDCKF2Z9NKQ`）。
+- 如果刚上架时按名称暂时搜不到，可先使用上述官方直达链接；README 和安装指南也提供了该链接。
+- Chrome Web Store：尚未发布。
+
 ## 详细描述
 
 Frame Video Downloader 帮助你发现当前网页中的 HLS、MP4 和其他可识别媒体链接，用视频海报或首帧小图辅助辨认资源，再批量勾选、下载并管理本机任务。**一期完整下载仅支持 Windows 10/11 x64，并需另行安装 Windows 本机组件；macOS、Linux 和 ChromeOS 上的扩展仅提供扫描、预览和候选选择。**支持可恢复的 HLS 分片下载、MP4 封装及重复任务检查。仅在你点击扫描时读取当前页媒体信息。
 
-扫描无需安装本机组件。下载、文件大小探测和任务管理需要从项目官方发布页另外下载安装 Windows 10/11 x64 组件（Host、yt-dlp、FFmpeg/ffprobe）。安装不需要管理员权限或 Python。扩展通过商店更新，本机组件由你运行官方安装器更新。卸载扩展不会卸载本机组件；卸载组件保留视频和任务记录。
+扫描无需安装本机组件。下载、文件大小探测和任务管理需要通过扩展中的直达链接另外下载安装 Windows 10/11 x64 组件（Host、yt-dlp、FFmpeg/ffprobe）。安装不需要管理员权限或 Python，安装完成后扩展会自动连接。本机组件更新仍需运行安装器。卸载扩展不会卸载本机组件；卸载组件保留视频和任务记录。
 
 预览以匿名跨域请求加载，不使用网站登录状态；下载登录态默认关闭，仅在你按任务选择并授权后读取所选媒体主机 Cookie。没有广告或遥测。预览、文件大小探测与下载会访问媒体服务器；不支持匿名预览的格式或受保护资源会显示占位状态。数据处理详见隐私政策。只下载你有权保存的内容；不支持 DRM，不保证兼容所有网站或播放器，blob 地址本身不可下载。
 

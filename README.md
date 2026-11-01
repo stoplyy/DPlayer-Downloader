@@ -85,20 +85,22 @@ external media URLs.
 
 The Edge launch distribution is **Microsoft Edge Add-ons plus a separate signed
 Windows Host installer**. Complete downloading requires Windows 10/11 x64 and
-Edge 120+. Chrome Web Store support will be added after its store ID is confirmed.
+Edge 120+. The Edge extension is live on Microsoft Edge Add-ons. Chrome Web
+Store publication is still pending.
 
-1. Install [Frame Video Downloader from Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/0RDCKF2Z9NKQ).
-   Scanning and candidate selection work without the Host.
-2. To download, follow the popup's installation link to
-   [GitHub Releases](https://github.com/stoplyy/DPlayer-Downloader/releases) and
-   download the signed Windows x64 Host installer. Follow the
+1. Install [Frame Video Downloader from Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/frame-video-downloader/eiengekfcedlijhhlgaalfmoicmchfcm).
+   Search for the exact name **Frame Video Downloader** or open the direct link
+   if it does not appear in search yet. Scanning and candidate selection work
+   without the Host.
+2. To download, use the popup's installation link to download the signed
+   Windows x64 Host installer directly. Follow the
    [installation guide](docs/installation.md); the installer is per-user and
    does not need administrator rights, Python, Developer mode or unpacked
    extension loading.
-3. Return to the extension and click **重试连接**. Downloads require a compatible
-   Host handshake. Edge updates come from the store; Host updates are installed
-   manually from the official release page. Chrome Web Store publication is
-   pending.
+3. Run the downloaded Host installer. The extension detects the installation
+   and reconnects automatically. Downloads require a compatible Host handshake.
+   Edge updates come from the store; Host updates use the direct installer link.
+   Chrome Web Store publication is pending.
 
 Remove the extension in browser settings. Remove **Frame Video Downloader Host**
 in Windows Installed apps. Host uninstall preserves downloads, task state and
@@ -177,9 +179,11 @@ remain available while the Host is unavailable. Automatic size probes only run
 when the component is ready; the popup discloses these media-server requests.
 
 The handshake checks both protocol and minimum Host version. The install/update
-panel points to fixed project HTTPS URLs, never downloads or executes an
-installer automatically, and does not mistake an opened release page for a
-successful installation. Active downloads are marked interrupted on recovery
+panel links directly to the Windows x64 installer. After the user runs it, the
+extension checks for the Host and reconnects automatically for up to 10 minutes.
+It never executes the installer automatically, and merely downloading or
+opening it is not treated as a successful installation. Active downloads are
+marked interrupted on recovery
 and require a user action to resume.
 
 ### Development installation / rebuilding after a source change

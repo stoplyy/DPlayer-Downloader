@@ -8,7 +8,7 @@ import { RELEASE } from './release_config.mjs';
 export const PROTOCOL_VERSION = RELEASE.protocolVersion;
 
 const PROTOCOL_ACTION =
-  '请从官方发布页更新本机下载组件，然后点击“重试连接”；若组件较新，请同时更新商店扩展。';
+  '请下载安装本机下载组件并完成更新；扩展会自动重新连接。若组件较新，请同时更新商店扩展。';
 
 export function describeProtocolMismatch(hostVersion) {
   return {
@@ -39,7 +39,7 @@ export const RECONNECT_DELAYS_MS = [1000, 2000, 5000];
 export const BRIDGE_STATUSES = ['idle', 'connecting', 'connected', 'disconnected'];
 
 const INSTALL_HINT =
-  '扫描仍可使用。下载需要本机组件，请打开官方发布页安装 Windows x64 组件，然后点击“重试连接”。';
+  '扫描仍可使用。下载需要本机组件，请下载安装 Windows x64 组件；安装完成后扩展会自动连接。';
 
 export function describeNativeError(message) {
   const text = typeof message === 'string' ? message.trim() : '';
@@ -71,13 +71,13 @@ export function describeNativeError(message) {
     return {
       code: 'host-exited',
       summary: '本机下载服务进程已退出',
-      action: '点击“重试连接”；若仍失败，请从官方发布页修复组件。',
+      action: '点击“重试连接”；若仍失败，请下载并运行安装器修复组件。',
     };
   }
   return {
     code: 'unavailable',
     summary: '本机下载组件暂时不可用',
-    action: '点击“重试连接”；若仍失败，请从官方发布页修复组件或查看帮助。',
+    action: '点击“重试连接”；若仍失败，请下载并运行安装器修复组件或查看帮助。',
   };
 }
 

@@ -65,11 +65,11 @@ HLS 集成测试使用本地生成的媒体和 loopback HTTP 服务器，只需�
 
 ## 安装与卸载
 
-Edge 首发版由 **Microsoft Edge Add-ons 扩展和单独签名的 Windows Host 安装器**组成。完整下载需要 Windows 10/11 x64 和 Edge 120+。Chrome Web Store 支持将在商店 ID 确认后添加。
+Edge 首发版由 **Microsoft Edge Add-ons 扩展和单独签名的 Windows Host 安装器**组成。Edge 扩展已在 Microsoft Edge Add-ons 上架。完整下载需要 Windows 10/11 x64 和 Edge 120+；Chrome Web Store 版本仍待发布。
 
-1. 从 [Microsoft Edge Add-ons 安装 Frame Video Downloader](https://microsoftedge.microsoft.com/addons/detail/0RDCKF2Z9NKQ)。无需 Host 即可扫描和选择候选资源。
-2. 如需下载，点击弹窗中的安装链接前往 [GitHub Releases](https://github.com/stoplyy/DPlayer-Downloader/releases)，下载签名的 Windows x64 Host 安装器。按[安装指南](docs/installation.md)操作；安装器仅为当前用户安装，无需管理员权限、Python、开发者模式或加载未打包扩展。
-3. 返回扩展并点击 **重试连接**。下载需要通过兼容的 Host 握手。Edge 扩展由商店更新；Host 需要从官方发布页手动更新。Chrome Web Store 尚待发布。
+1. 从 [Microsoft Edge Add-ons 安装 Frame Video Downloader](https://microsoftedge.microsoft.com/addons/detail/frame-video-downloader/eiengekfcedlijhhlgaalfmoicmchfcm)。在商店中搜索完整名称 **Frame Video Downloader**；如果暂时没有搜索结果，可使用此直达链接。无需 Host 即可扫描和选择候选资源。
+2. 如需下载，点击弹窗中的安装链接直接下载签名的 Windows x64 Host 安装器。按[安装指南](docs/installation.md)操作；安装器仅为当前用户安装，无需管理员权限、Python、开发者模式或加载未打包扩展。
+3. 运行安装器后，扩展会自动检测并连接 Host。下载需要通过兼容的 Host 握手。Edge 扩展由商店更新；Host 更新仍需运行安装器。Chrome Web Store 尚待发布。
 
 在浏览器设置中移除扩展。在 Windows“已安装的应用”中卸载 **Frame Video Downloader Host**。Host 卸载会保留下载文件、任务状态和设置。数据位置及可选清理方式请见[安装与迁移](docs/installation.md)和[隐私政策](docs/privacy-policy.md)。同一时间只能由一个浏览器 Host 会话管理用户任务数据；切换前请先停止另一个浏览器中的服务。
 
@@ -109,9 +109,9 @@ URL 并不是可靠的媒体标识：网站可能在页面每次加载时轮换�
 
 ## Host 连接与恢复
 
-有上限的握手会报告检查中、就绪、未安装、不兼容或失败状态。缺失或不兼容的组件会等待用户手动重试，而不会反复启动进程。意外断开后会按有上限的退避策略重连；状态会在 Worker 挂起期间持久保存。Host 不可用时，扫描和本机站点偏好仍可使用。只有组件就绪时才会自动探测大小；弹窗会说明这些请求会发送到媒体服务器。
+有上限的握手会报告检查中、就绪、未安装、不兼容或失败状态。缺失的组件不会反复启动；用户点击安装链接后，扩展会在有限时间内自动检查安装状态。意外断开后会按有上限的退避策略重连；状态会在 Worker 挂起期间持久保存。Host 不可用时，扫描和本机站点偏好仍可使用。只有组件就绪时才会自动探测大小；弹窗会说明这些请求会发送到媒体服务器。
 
-握手会同时检查协议和最低 Host 版本。安装/更新面板指向固定的项目 HTTPS URL，不会自动下载或执行安装程序，也不会把仅打开发布页误判为安装成功。恢复时，正在进行的下载会标记为中断，必须由用户操作继续。
+握手会同时检查协议和最低 Host 版本。安装/更新面板会直达 Windows x64 安装包；用户运行安装程序后，扩展会在 10 分钟内自动检测并重连，不会自动执行安装程序，也不会把仅下载或打开安装包误判为安装成功。恢复时，正在进行的下载会标记为中断，必须由用户操作继续。
 
 ### 开发安装 / 源码变更后重建
 

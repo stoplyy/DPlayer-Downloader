@@ -67,7 +67,7 @@ $hostDir = "dist/release/host-$($config.hostVersion)"
 gh release upload $tag "$hostDir/frame-video-downloader-host-$($config.hostVersion)-windows-x64.exe" "$hostDir/release-manifest.json"
 ```
 
-检查 Draft Release 中包含正式 Edge ZIP、对应 JSON 校验文件、已签名 Host 安装器和安装器清单；完善发布说明后，再在 GitHub Releases 页面发布。扩展中的 Host 下载链接打开 Releases 页面，用户可在那里下载安装器。不要发布仅含 Edge ZIP 的 Draft，也不要把 DEVELOPMENT 包附加到正式 Release。
+检查 Draft Release 中包含正式 Edge ZIP、对应 JSON 校验文件、已签名 Host 安装器和安装器清单；完善发布说明后，再在 GitHub Releases 页面发布。扩展中的 Host 下载链接直接下载与当前 Host 版本匹配的安装器。不要发布仅含 Edge ZIP 的 Draft，也不要把 DEVELOPMENT 包附加到正式 Release。
 
 ## 规范依据
 

@@ -1,6 +1,6 @@
 const TEST_FALLBACKS = {
   downloadQueueAdded: '已加入下载队列（$1 项）',
-  hostRequiredNotice: '请先安装本机下载组件并点击“重试连接”，扫描、预览和选择仍可使用',
+  hostRequiredNotice: '请先安装本机下载组件；安装完成后扩展会自动连接。扫描、预览和选择仍可使用',
   duplicateTask: '已存在相同任务（$1）',
 };
 

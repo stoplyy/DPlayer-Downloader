@@ -142,10 +142,11 @@ outputs go to `dist/release`.
 
 ## Select all downloads
 
-After scanning, click **全选** above the media list, then **下载已选** to queue
-all selected videos. Click the checkbox again to clear the selection, or
-uncheck individual videos. The checkbox shows a mixed state when only some
-videos are selected; the footer always shows the selected count.
+After scanning, click **Select all media** above the media list, then
+**Download selected** to queue all selected videos. Click the checkbox again to
+clear the selection, or uncheck individual videos. The checkbox shows a mixed
+state when only some videos are selected; the footer always shows the selected
+count.
 
 ## Duplicate downloads
 
@@ -198,7 +199,7 @@ managed by the official installer. After editing source, run:
 
 It rebuilds `native-host.exe` from source, refreshes the installed extension
 copy, re-registers the Native Messaging manifest, and prints the protocol
-version. Then click **重新加载** at `edge://extensions`. Skipping this step is
+version. Then click **Reload** at `edge://extensions`. Skipping this step is
 what makes the UI fail with errors the host never understood.
 
 To check which message types an installed binary actually supports:
@@ -216,6 +217,11 @@ This probe is read-only; it never changes settings or starts a download.
 - Cookie access is off by default. When enabled, the extension requests optional permission for each selected media host from that click; it reads cookies only after all requested hosts are approved. A denial stops the login-state operation. Cookie files are scoped to each authorized URL's exact hostname, use a current-user-only ACL on Windows, are not logged or persisted in task JSON, and are deleted when the worker ends.
 - The page may not reveal CDN or redirect hosts before download. Cookies are deliberately not broadened to parent domains or unknown CDN hosts. A source that requires a separate CDN login cookie may fail; authorize and scan that host explicitly if it is surfaced as a candidate.
 - Signed media URLs are encrypted with Windows DPAPI in task state. The extension UI displays URLs without query strings.
-- The popup settings panel stores two user preferences. "自动勾选资源的站点" is a list of hostnames whose media candidates are pre-selected after a scan; matching covers the hostname and its subdomains only. "下载保存路径" sets the absolute folder that the Native Host uses for task output; it is validated and created by the host, and an invalid path is rejected with an error instead of falling back to a default.
+- The popup settings panel stores two user preferences. "Sites to auto-select"
+  is a list of hostnames whose media candidates are pre-selected after a scan;
+  matching covers the hostname and its subdomains only. "Download folder" sets
+  the absolute folder that the Native Host uses for task output; it is validated
+  and created by the host, and an invalid path is rejected with an error instead
+  of falling back to a default.
 - The local egress proxy rejects non-public DNS answers and forwards HTTP requests through pinned addresses. Current tests cover local HTTP HLS routes, private-address refusal, and interrupted native-HLS continuation. HTTPS `CONNECT` exposes only the tunnel authority, not encrypted internal redirect/segment paths; this is not a claim of a full network sandbox against a compromised downloader.
 - Do not use this tool to bypass access controls or download material without permission. No real-site download has been used as a test.
